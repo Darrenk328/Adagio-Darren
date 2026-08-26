@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Adagio",
+    "slug": "adagio",
+    "scheme": "adagio",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#FFFFFF"
+    },
+    "ios": {
+      "bundleIdentifier": "com.adagio.app",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.adagio.app"
+    }
+  }
+}
