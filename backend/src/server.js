@@ -19,7 +19,18 @@ app.use('/match', matchRoutes);
 
 // Basic error handler so unexpected failures return JSON, not an HTML stack trace.
 app.use((err, _req, res, _next) => {
-  console.error(err);
+  if (err.response) {
+    // Axios error hitting Spotify/GetSongBPM — log the actual API response body,
+    // not the giant request/socket object console.error(err) would otherwise dump.
+    console.error(
+      `Upstream ${err.response.status} from ${err.config?.url}:`,
+      JSON.stringify(err.response.data),
+      'www-authenticate:',
+      err.response.headers?.['www-authenticate'],
+    );
+  } else {
+    console.error(err);
+  }
   res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 

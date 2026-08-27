@@ -70,7 +70,9 @@ export async function getUserPlaylists(accessToken) {
  */
 export async function getPlaylistTracks(accessToken, playlistId) {
   const tracks = [];
-  let url = `${SPOTIFY_API_URL}/playlists/${playlistId}/tracks`;
+  // As of Spotify's Feb 2026 Dev Mode migration, /tracks was renamed to /items
+  // (and each entry's `track` field to `item`) for Development Mode apps.
+  let url = `${SPOTIFY_API_URL}/playlists/${playlistId}/items`;
   let params = { limit: 100 };
 
   while (url) {
@@ -79,8 +81,8 @@ export async function getPlaylistTracks(accessToken, playlistId) {
       params,
     });
 
-    for (const item of data.items) {
-      const track = item.track;
+    for (const entry of data.items) {
+      const track = entry.item ?? entry.track; // fall back to old shape just in case
       if (!track) continue; // local/unavailable tracks show up as null
       tracks.push({
         id: track.id,

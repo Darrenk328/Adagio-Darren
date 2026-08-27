@@ -11,6 +11,7 @@ router.post('/token', async (req, res, next) => {
     if (!code) return res.status(400).json({ error: 'Missing "code" in request body' });
 
     const tokens = await exchangeCodeForToken(code);
+    console.log('Granted scope:', tokens.scope);
     res.json(tokens);
   } catch (err) {
     next(err);
