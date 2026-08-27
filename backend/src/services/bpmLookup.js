@@ -7,6 +7,9 @@ const GETSONGBPM_URL = 'https://api.getsong.co/search/';
 // restarts or run across multiple instances.
 const cache = new Map();
 
+// TEMP DIAGNOSTIC — coverage vs. tolerance triage, see [conversation].
+export const diagnosticCounts = { noMatch: 0, error: 0, errorSamples: [] };
+
 function cacheKey(artist, title) {
   return `${artist}|${title}`.toLowerCase();
 }
@@ -31,6 +34,7 @@ export async function lookupBpm(artist, title) {
 
     const match = data?.search?.[0];
     const bpm = match?.tempo ? Number(match.tempo) : null;
+    if (bpm === null) diagnosticCounts.noMatch++;
 
     cache.set(key, bpm);
     return bpm;
@@ -38,6 +42,10 @@ export async function lookupBpm(artist, title) {
     // GetSongBPM returns a 404-ish error payload (not a clean 404 status) when
     // there's no match — treat any failure here as "unknown" rather than
     // blowing up the whole playlist enrichment.
+    diagnosticCounts.error++;
+    if (diagnosticCounts.errorSamples.length < 3) {
+      diagnosticCounts.errorSamples.push(`${err.response?.status ?? err.code ?? err.message}`);
+    }
     cache.set(key, null);
     return null;
   }

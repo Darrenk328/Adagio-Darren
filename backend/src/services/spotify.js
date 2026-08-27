@@ -91,6 +91,7 @@ export async function getPlaylistTracks(accessToken, playlistId) {
         id: track.id,
         title: track.name,
         artist: track.artists?.[0]?.name ?? 'Unknown',
+        artistId: track.artists?.[0]?.id ?? null,
         albumArtUrl: track.album?.images?.[0]?.url ?? null,
       });
     }

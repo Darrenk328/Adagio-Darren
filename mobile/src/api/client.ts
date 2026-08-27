@@ -14,11 +14,20 @@ export type Track = {
   id: string;
   title: string;
   artist: string;
+  artistId: string | null;
   albumArtUrl: string | null;
   bpm: number | null;
 };
 
-export type MatchedTrack = Track & { effectiveBpm: number; distance: number };
+export type MatchedTrack = Track & {
+  effectiveBpm: number;
+  distance: number;
+  // 'exact' = within the originally requested tolerance; 'widened' = only
+  // matched because the backend cascaded to a wider tolerance.
+  matchTier: 'exact' | 'widened';
+};
+
+export type MatchResult = { matches: MatchedTrack[]; tolerance: number };
 
 export type TokenResponse = { access_token: string; refresh_token?: string; expires_in: number };
 
@@ -47,6 +56,6 @@ export async function fetchPlaylistTracks(accessToken: string, playlistId: strin
 }
 
 export async function matchTracks(tracks: Track[], cadence: number, tolerance: number) {
-  const { data } = await backend.post<MatchedTrack[]>('/match', { tracks, cadence, tolerance });
+  const { data } = await backend.post<MatchResult>('/match', { tracks, cadence, tolerance });
   return data;
 }

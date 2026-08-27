@@ -27,7 +27,7 @@ export function matchTracksToCadence(tracks, cadence, tolerance) {
           }
         }
       }
-      return best ? { ...t, effectiveBpm: best.effectiveBpm, distance: best.distance } : null;
+      return best ? { ...t, effectiveBpm: best.effectiveBpm, distance: best.distance, matchTier: 'exact' } : null;
     })
     .filter(Boolean);
 

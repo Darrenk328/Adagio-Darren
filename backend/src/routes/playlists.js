@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getUserPlaylists, getPlaylistTracks } from '../services/spotify.js';
-import { lookupBpmForTracks } from '../services/bpmLookup.js';
+import { lookupBpmForTracks, diagnosticCounts } from '../services/bpmLookup.js';
 
 const router = Router();
 
@@ -29,6 +29,15 @@ router.get('/:id/tracks', async (req, res, next) => {
 
     const tracks = await getPlaylistTracks(accessToken, req.params.id);
     const withBpm = await lookupBpmForTracks(tracks);
+
+    // TEMP DIAGNOSTIC — coverage vs. tolerance triage, see [conversation].
+    const withData = withBpm.filter((t) => typeof t.bpm === 'number').length;
+    console.log(
+      `[bpm-coverage] ${withData}/${withBpm.length} got BPM. ` +
+        `noMatch=${diagnosticCounts.noMatch} apiError=${diagnosticCounts.error} ` +
+        `errorSamples=${JSON.stringify(diagnosticCounts.errorSamples)}`,
+    );
+
     res.json(withBpm);
   } catch (err) {
     next(err);
