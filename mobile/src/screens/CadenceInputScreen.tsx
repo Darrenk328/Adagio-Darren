@@ -8,17 +8,23 @@ import type { RootStackParamList } from '../navigation/AppNavigator';
 type Props = NativeStackScreenProps<RootStackParamList, 'CadenceInput'>;
 
 const DEFAULT_TOLERANCE = 5;
-type Mode = 'cadence' | 'pace';
+type InputMode = 'cadence' | 'pace';
+type Activity = 'running' | 'cycling';
+
+const UNIT: Record<Activity, string> = { running: 'SPM', cycling: 'RPM' };
+const DEFAULT_CADENCE: Record<Activity, string> = { running: '170', cycling: '90' };
 
 export default function CadenceInputScreen({ route, navigation }: Props) {
   const { playlistId, playlistName } = route.params;
-  const [mode, setMode] = useState<Mode>('cadence');
+  const [activity, setActivity] = useState<Activity>('running');
+  const [inputMode, setInputMode] = useState<InputMode>('cadence');
   const [cadence, setCadence] = useState('170');
   const [tolerance, setTolerance] = useState(String(DEFAULT_TOLERANCE));
   const [paceInput, setPaceInput] = useState('');
 
+  const unit = UNIT[activity];
   const paceSeconds = parsePaceString(paceInput);
-  const isPaceInvalid = mode === 'pace' && paceInput.length > 0 && paceSeconds === null;
+  const isPaceInvalid = activity === 'running' && inputMode === 'pace' && paceInput.length > 0 && paceSeconds === null;
 
   const handlePaceChange = (text: string) => {
     setPaceInput(text);
@@ -38,6 +44,7 @@ export default function CadenceInputScreen({ route, navigation }: Props) {
       playlistName,
       cadence: cadenceNum,
       tolerance: toleranceNum || DEFAULT_TOLERANCE,
+      unit,
     });
   };
 
@@ -47,17 +54,44 @@ export default function CadenceInputScreen({ route, navigation }: Props) {
 
       <View style={styles.modeSwitch}>
         <Pressable
-          style={[styles.modeTab, mode === 'cadence' && styles.modeTabActive]}
-          onPress={() => setMode('cadence')}
+          style={[styles.modeTab, activity === 'running' && styles.modeTabActive]}
+          onPress={() => {
+            setActivity('running');
+            setCadence(DEFAULT_CADENCE.running);
+          }}
         >
-          <Text style={[styles.modeTabText, mode === 'cadence' && styles.modeTabTextActive]}>By cadence</Text>
+          <Text style={[styles.modeTabText, activity === 'running' && styles.modeTabTextActive]}>Running</Text>
         </Pressable>
-        <Pressable style={[styles.modeTab, mode === 'pace' && styles.modeTabActive]} onPress={() => setMode('pace')}>
-          <Text style={[styles.modeTabText, mode === 'pace' && styles.modeTabTextActive]}>By pace</Text>
+        <Pressable
+          style={[styles.modeTab, activity === 'cycling' && styles.modeTabActive]}
+          onPress={() => {
+            setActivity('cycling');
+            setInputMode('cadence'); // pace-based input is running-only
+            setCadence(DEFAULT_CADENCE.cycling);
+          }}
+        >
+          <Text style={[styles.modeTabText, activity === 'cycling' && styles.modeTabTextActive]}>Cycling</Text>
         </Pressable>
       </View>
 
-      {mode === 'pace' && (
+      {activity === 'running' && (
+        <View style={[styles.modeSwitch, styles.subModeSwitch]}>
+          <Pressable
+            style={[styles.modeTab, inputMode === 'cadence' && styles.modeTabActive]}
+            onPress={() => setInputMode('cadence')}
+          >
+            <Text style={[styles.modeTabText, inputMode === 'cadence' && styles.modeTabTextActive]}>By cadence</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.modeTab, inputMode === 'pace' && styles.modeTabActive]}
+            onPress={() => setInputMode('pace')}
+          >
+            <Text style={[styles.modeTabText, inputMode === 'pace' && styles.modeTabTextActive]}>By pace</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {activity === 'running' && inputMode === 'pace' && (
         <>
           <Text style={styles.label}>Pace (min:sec per mile)</Text>
           <TextInput
@@ -77,16 +111,18 @@ export default function CadenceInputScreen({ route, navigation }: Props) {
         </>
       )}
 
-      <Text style={styles.label}>Target cadence (steps per minute)</Text>
+      <Text style={styles.label}>
+        {activity === 'running' ? 'Target cadence' : 'Target RPM'} ({unit})
+      </Text>
       <TextInput
         style={styles.input}
         value={cadence}
         onChangeText={setCadence}
         keyboardType="number-pad"
-        placeholder="e.g. 170"
+        placeholder={activity === 'running' ? 'e.g. 170' : 'e.g. 90'}
       />
 
-      <Text style={styles.label}>Tolerance (+/- BPM)</Text>
+      <Text style={styles.label}>Tolerance (+/- {unit})</Text>
       <TextInput
         style={styles.input}
         value={tolerance}
@@ -112,6 +148,7 @@ const styles = StyleSheet.create({
     padding: 4,
     marginBottom: 8,
   },
+  subModeSwitch: { marginTop: 12 },
   modeTab: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
   modeTabActive: { backgroundColor: colors.surface },
   modeTabText: { fontSize: 14, fontWeight: '600', color: colors.textMuted },

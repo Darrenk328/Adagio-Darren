@@ -14,7 +14,7 @@ const TIER_LABEL: Record<MatchedTrack['matchTier'], string> = {
 };
 
 export default function ResultsScreen({ route }: Props) {
-  const { playlistId, cadence, tolerance } = route.params;
+  const { playlistId, cadence, tolerance, unit } = route.params;
   const { accessToken } = useAuth();
   const [matches, setMatches] = useState<MatchedTrack[]>([]);
   const [usedTolerance, setUsedTolerance] = useState(tolerance);
@@ -59,7 +59,7 @@ export default function ResultsScreen({ route }: Props) {
   return (
     <View style={styles.container}>
       <Text style={styles.header}>
-        {matches.length} match{matches.length === 1 ? '' : 'es'} at {cadence} SPM (±{tolerance})
+        {matches.length} match{matches.length === 1 ? '' : 'es'} at {cadence} {unit} (±{tolerance})
       </Text>
       {wasWidened && (
         <Text style={styles.subheader}>

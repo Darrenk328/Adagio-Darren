@@ -14,7 +14,7 @@ export type RootStackParamList = {
   Login: undefined;
   PlaylistPicker: undefined;
   CadenceInput: { playlistId: string; playlistName: string };
-  Results: { playlistId: string; playlistName: string; cadence: number; tolerance: number };
+  Results: { playlistId: string; playlistName: string; cadence: number; tolerance: number; unit: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
