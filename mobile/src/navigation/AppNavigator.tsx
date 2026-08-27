@@ -1,4 +1,5 @@
 import React from 'react';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
@@ -31,7 +32,17 @@ const navTheme = {
 };
 
 export default function AppNavigator() {
-  const { accessToken } = useAuth();
+  const { accessToken, isLoading } = useAuth();
+
+  // Restoring a stored session on launch — avoid flashing the Login screen
+  // before we know whether a valid refresh token is already saved.
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator color={colors.secondary} />
+      </View>
+    );
+  }
 
   return (
     <NavigationContainer theme={navTheme}>
@@ -49,3 +60,7 @@ export default function AppNavigator() {
     </NavigationContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingContainer: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
+});

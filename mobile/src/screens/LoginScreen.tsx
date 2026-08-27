@@ -39,7 +39,7 @@ export default function LoginScreen() {
       }
 
       const tokens = await exchangeCodeForToken(result.params.code);
-      await login(tokens.access_token);
+      await login(tokens.access_token, tokens.refresh_token);
     } catch (err) {
       console.error(err);
       Alert.alert('Login failed', 'Something went wrong connecting to Spotify.');

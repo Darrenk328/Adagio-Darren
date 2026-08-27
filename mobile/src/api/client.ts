@@ -20,11 +20,15 @@ export type Track = {
 
 export type MatchedTrack = Track & { effectiveBpm: number; distance: number };
 
+export type TokenResponse = { access_token: string; refresh_token?: string; expires_in: number };
+
 export async function exchangeCodeForToken(code: string) {
-  const { data } = await backend.post<{ access_token: string; refresh_token: string; expires_in: number }>(
-    '/auth/token',
-    { code },
-  );
+  const { data } = await backend.post<TokenResponse>('/auth/token', { code });
+  return data;
+}
+
+export async function refreshAccessToken(refreshToken: string) {
+  const { data } = await backend.post<TokenResponse>('/auth/refresh', { refreshToken });
   return data;
 }
 

@@ -61,7 +61,10 @@ export async function getUserPlaylists(accessToken) {
     id: p.id,
     name: p.name,
     imageUrl: p.images?.[0]?.url ?? null,
-    trackCount: p.tracks?.total ?? 0,
+    // Feb 2026 Dev Mode migration renamed the playlist object's `tracks` field
+    // to `items` (same rename as the /tracks -> /items endpoint change) — fall
+    // back to the old field name in case an older-shaped response comes through.
+    trackCount: p.items?.total ?? p.tracks?.total ?? 0,
   }));
 }
 
