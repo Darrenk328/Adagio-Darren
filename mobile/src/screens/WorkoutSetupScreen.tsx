@@ -3,7 +3,7 @@ import { View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator 
 import { ScrollView } from 'react-native-gesture-handler';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
-import { parsePaceString, estimateCadenceFromPace } from '../utils/paceToCadence';
+import { parsePaceString, estimateCadenceFromPace, PaceUnit } from '../utils/paceToCadence';
 import { useSettings } from '../settings/SettingsContext';
 import { useAuth } from '../auth/AuthContext';
 import { fetchPlaylistTracks, matchTracks } from '../api/client';
@@ -34,6 +34,9 @@ export default function WorkoutSetupScreen({ route, navigation }: Props) {
   const [cadence, setCadence] = useState('170');
   const [tolerance, setTolerance] = useState(String(defaultTolerance));
   const [paceInput, setPaceInput] = useState('');
+  // Shared across Single mode's pace field and every segment's pace field in
+  // Intervals mode — one unit for the whole workout, not per-field.
+  const [paceUnit, setPaceUnit] = useState<PaceUnit>('mi');
 
   // Intervals-mode state
   const [segments, setSegments] = useState<Segment[]>([]);
@@ -52,7 +55,17 @@ export default function WorkoutSetupScreen({ route, navigation }: Props) {
     setPaceInput(text);
     const seconds = parsePaceString(text);
     if (seconds !== null) {
-      setCadence(String(estimateCadenceFromPace(seconds)));
+      setCadence(String(estimateCadenceFromPace(seconds, paceUnit)));
+    }
+  };
+
+  const handlePaceUnitChange = (next: PaceUnit) => {
+    setPaceUnit(next);
+    // Re-estimate immediately so the displayed cadence reflects the unit
+    // that's actually selected, not stale math from the old one.
+    const seconds = parsePaceString(paceInput);
+    if (seconds !== null) {
+      setCadence(String(estimateCadenceFromPace(seconds, next)));
     }
   };
 
@@ -135,6 +148,26 @@ export default function WorkoutSetupScreen({ route, navigation }: Props) {
           <Text style={[styles.modeTabText, activity === 'cycling' && styles.modeTabTextActive]}>Cycling</Text>
         </Pressable>
       </View>
+
+      {activity === 'running' && (
+        <View style={styles.unitRow}>
+          <Text style={styles.unitLabel}>Pace unit</Text>
+          <View style={styles.unitToggle}>
+            <Pressable
+              style={[styles.unitButton, paceUnit === 'mi' && styles.unitButtonActive]}
+              onPress={() => handlePaceUnitChange('mi')}
+            >
+              <Text style={[styles.unitButtonText, paceUnit === 'mi' && styles.unitButtonTextActive]}>mi</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.unitButton, paceUnit === 'km' && styles.unitButtonActive]}
+              onPress={() => handlePaceUnitChange('km')}
+            >
+              <Text style={[styles.unitButtonText, paceUnit === 'km' && styles.unitButtonTextActive]}>km</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
     </View>
   );
 
@@ -148,6 +181,7 @@ export default function WorkoutSetupScreen({ route, navigation }: Props) {
       <IntervalBuilder
         activity={activity}
         unit={unit}
+        paceUnit={paceUnit}
         segments={segments}
         onChange={setSegments}
         header={sharedHeader}
@@ -193,13 +227,13 @@ export default function WorkoutSetupScreen({ route, navigation }: Props) {
 
       {activity === 'running' && inputMode === 'pace' && (
         <>
-          <Text style={styles.label}>Pace (min:sec per mile)</Text>
+          <Text style={styles.label}>Pace (min:sec per {paceUnit === 'mi' ? 'mile' : 'km'})</Text>
           <TextInput
             style={[styles.input, isPaceInvalid && styles.inputError]}
             value={paceInput}
             onChangeText={handlePaceChange}
             keyboardType="numbers-and-punctuation"
-            placeholder="e.g. 7:30"
+            placeholder={paceUnit === 'mi' ? 'e.g. 7:30' : 'e.g. 4:40'}
           />
           {isPaceInvalid && <Text style={styles.errorText}>Enter pace as mm:ss, e.g. 7:30</Text>}
           {paceSeconds !== null && (
@@ -244,6 +278,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   subModeSwitch: { marginTop: 12 },
+  unitRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
+  unitLabel: { fontSize: 13, color: colors.textMuted },
+  unitToggle: { flexDirection: 'row', backgroundColor: colors.border, borderRadius: 8, padding: 3 },
+  unitButton: { paddingVertical: 5, paddingHorizontal: 14, borderRadius: 6 },
+  unitButtonActive: { backgroundColor: colors.surface },
+  unitButtonText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
+  unitButtonTextActive: { color: colors.text },
   modeTab: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
   modeTabActive: { backgroundColor: colors.surface },
   modeTabText: { fontSize: 14, fontWeight: '600', color: colors.textMuted },

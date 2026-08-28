@@ -4,7 +4,7 @@ import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-nativ
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { parseDurationString, formatDuration } from '../utils/duration';
-import { parsePaceString, estimateCadenceFromPace } from '../utils/paceToCadence';
+import { parsePaceString, estimateCadenceFromPace, PaceUnit } from '../utils/paceToCadence';
 import { warmupTempoCooldownPreset, fiveIntervalsPreset } from '../utils/intervalPresets';
 import type { Segment } from '../types/workout';
 
@@ -13,6 +13,7 @@ type Activity = 'running' | 'cycling';
 type Props = {
   activity: Activity;
   unit: string;
+  paceUnit: PaceUnit;
   segments: Segment[];
   onChange: (segments: Segment[]) => void;
   /** Rendered above the presets/segment list, scrolling together with it. */
@@ -30,7 +31,7 @@ function newSegment(unit: string): Segment {
   };
 }
 
-export default function IntervalBuilder({ activity, unit, segments, onChange, header, footer }: Props) {
+export default function IntervalBuilder({ activity, unit, paceUnit, segments, onChange, header, footer }: Props) {
   const applyPreset = (build: (a: Activity) => Segment[]) => {
     const apply = () => onChange(build(activity));
     if (segments.length > 0) {
@@ -95,6 +96,7 @@ export default function IntervalBuilder({ activity, unit, segments, onChange, he
           <SegmentRow
             segment={item}
             unit={unit}
+            paceUnit={paceUnit}
             activity={activity}
             isActive={isActive}
             onDrag={drag}
@@ -121,6 +123,7 @@ export default function IntervalBuilder({ activity, unit, segments, onChange, he
 function SegmentRow({
   segment,
   unit,
+  paceUnit,
   activity,
   isActive,
   onDrag,
@@ -130,6 +133,7 @@ function SegmentRow({
 }: {
   segment: Segment;
   unit: string;
+  paceUnit: PaceUnit;
   activity: Activity;
   isActive: boolean;
   onDrag: () => void;
@@ -164,7 +168,7 @@ function SegmentRow({
     setPaceInput(text);
     const seconds = parsePaceString(text);
     if (seconds !== null) {
-      const cadence = estimateCadenceFromPace(seconds);
+      const cadence = estimateCadenceFromPace(seconds, paceUnit);
       setTargetText(String(cadence));
       onUpdate({ target: cadence });
     }
@@ -198,7 +202,7 @@ function SegmentRow({
               />
             </View>
             <View style={rowStyles.inputGroup}>
-              <Text style={rowStyles.inputCaption}>Target ({unit})</Text>
+              <Text style={rowStyles.inputCaption}>{showPace ? `Pace (/${paceUnit})` : `Target (${unit})`}</Text>
               {showPace ? (
                 <TextInput
                   style={rowStyles.smallInput}
@@ -206,7 +210,7 @@ function SegmentRow({
                   onChangeText={handlePaceChange}
                   onBlur={() => setShowPace(false)}
                   keyboardType="numbers-and-punctuation"
-                  placeholder="mm:ss pace"
+                  placeholder={paceUnit === 'mi' ? 'e.g. 7:30' : 'e.g. 4:40'}
                   autoFocus
                 />
               ) : (

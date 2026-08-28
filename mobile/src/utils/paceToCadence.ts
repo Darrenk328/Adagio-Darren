@@ -29,6 +29,10 @@ const REFERENCE_POINTS: [paceSecPerMile: number, cadenceSpm: number][] = [
   [4 * 60 + 17, 190], // 4:17/mi — fast/elite
 ];
 
+export type PaceUnit = 'mi' | 'km';
+
+const MILE_TO_KM = 1.609344;
+
 /** Parses a "mm:ss" pace string into total seconds. Returns null if invalid. */
 export function parsePaceString(input: string): number | null {
   const match = input.trim().match(/^(\d{1,2}):([0-5]?\d)$/);
@@ -39,8 +43,17 @@ export function parsePaceString(input: string): number | null {
   return total > 0 ? total : null;
 }
 
-/** Estimates cadence (spm) from a mile pace, given in seconds per mile. */
-export function estimateCadenceFromPace(paceSecPerMile: number): number {
+/**
+ * Estimates cadence (spm) from a pace, given in seconds per the specified
+ * distance unit (mile or km). The reference table below is calibrated in
+ * seconds/mile, since that's the physiological relationship (speed vs.
+ * cadence) that actually matters — a km-based pace is converted to its
+ * mile-equivalent first so both units estimate from the same real speed,
+ * not just a relabeled number.
+ */
+export function estimateCadenceFromPace(paceSecPerDistance: number, unit: PaceUnit = 'mi'): number {
+  const paceSecPerMile = unit === 'km' ? paceSecPerDistance * MILE_TO_KM : paceSecPerDistance;
+
   const points = REFERENCE_POINTS;
 
   // Pace and cadence move in opposite directions (slower pace = bigger
