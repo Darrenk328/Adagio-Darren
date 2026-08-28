@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { colors } from '../theme/colors';
 
@@ -13,10 +13,11 @@ export type MainTabParamList = {
   Settings: undefined;
 };
 
-const TAB_ICON: Record<keyof MainTabParamList, string> = {
-  Home: '🏠',
-  Workout: '🏃',
-  Settings: '⚙️',
+type IconName = keyof typeof Ionicons.glyphMap;
+const TAB_ICON: Record<keyof MainTabParamList, { active: IconName; inactive: IconName }> = {
+  Home: { active: 'home', inactive: 'home-outline' },
+  Workout: { active: 'walk', inactive: 'walk-outline' },
+  Settings: { active: 'settings', inactive: 'settings-outline' },
 };
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -30,7 +31,9 @@ export default function MainTabs() {
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: { backgroundColor: colors.background, borderTopColor: colors.border },
         tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
-        tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>{TAB_ICON[route.name]}</Text>,
+        tabBarIcon: ({ color, focused, size }) => (
+          <Ionicons name={focused ? TAB_ICON[route.name].active : TAB_ICON[route.name].inactive} size={size} color={color} />
+        ),
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />

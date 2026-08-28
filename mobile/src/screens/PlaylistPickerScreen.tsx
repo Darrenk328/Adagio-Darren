@@ -47,7 +47,7 @@ export default function PlaylistPickerScreen({ navigation }: Props) {
         renderItem={({ item }) => (
           <Pressable
             style={styles.row}
-            onPress={() => navigation.navigate('CadenceInput', { playlistId: item.id, playlistName: item.name })}
+            onPress={() => navigation.navigate('WorkoutSetup', { playlistId: item.id, playlistName: item.name })}
           >
             {item.imageUrl ? (
               <Image source={{ uri: item.imageUrl }} style={styles.art} />

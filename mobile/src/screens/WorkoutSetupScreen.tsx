@@ -1,31 +1,48 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, Alert } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import { parsePaceString, estimateCadenceFromPace } from '../utils/paceToCadence';
 import { useSettings } from '../settings/SettingsContext';
+import IntervalBuilder from '../components/IntervalBuilder';
+import type { Segment } from '../types/workout';
 import type { WorkoutStackParamList } from '../navigation/WorkoutStack';
 
-type Props = NativeStackScreenProps<WorkoutStackParamList, 'CadenceInput'>;
+type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutSetup'>;
 
+type WorkoutMode = 'single' | 'intervals';
 type InputMode = 'cadence' | 'pace';
 type Activity = 'running' | 'cycling';
 
 const UNIT: Record<Activity, string> = { running: 'SPM', cycling: 'RPM' };
 const DEFAULT_CADENCE: Record<Activity, string> = { running: '170', cycling: '90' };
 
-export default function CadenceInputScreen({ route, navigation }: Props) {
+export default function WorkoutSetupScreen({ route, navigation }: Props) {
   const { playlistId, playlistName } = route.params;
   const { defaultTolerance } = useSettings();
+
+  const [workoutMode, setWorkoutMode] = useState<WorkoutMode>('single');
   const [activity, setActivity] = useState<Activity>('running');
+
+  // Single-mode state
   const [inputMode, setInputMode] = useState<InputMode>('cadence');
   const [cadence, setCadence] = useState('170');
   const [tolerance, setTolerance] = useState(String(defaultTolerance));
   const [paceInput, setPaceInput] = useState('');
 
+  // Intervals-mode state
+  const [segments, setSegments] = useState<Segment[]>([]);
+
   const unit = UNIT[activity];
   const paceSeconds = parsePaceString(paceInput);
   const isPaceInvalid = activity === 'running' && inputMode === 'pace' && paceInput.length > 0 && paceSeconds === null;
+
+  const handleActivityChange = (next: Activity) => {
+    setActivity(next);
+    setCadence(DEFAULT_CADENCE[next]);
+    if (next === 'cycling') setInputMode('cadence'); // pace-based input is running-only
+  };
 
   const handlePaceChange = (text: string) => {
     setPaceInput(text);
@@ -35,7 +52,7 @@ export default function CadenceInputScreen({ route, navigation }: Props) {
     }
   };
 
-  const handleSubmit = () => {
+  const handleSingleSubmit = () => {
     const cadenceNum = Number(cadence);
     const toleranceNum = Number(tolerance);
     if (!cadenceNum || cadenceNum <= 0) return;
@@ -49,31 +66,82 @@ export default function CadenceInputScreen({ route, navigation }: Props) {
     });
   };
 
-  return (
-    <View style={styles.container}>
+  const handleStartIntervalWorkout = () => {
+    if (segments.length === 0) {
+      Alert.alert('Add at least one segment', 'Build your interval workout before starting.');
+      return;
+    }
+    Alert.alert(
+      'Coming soon',
+      "Live interval playback (auto-advancing through segments and re-matching songs) isn't wired up yet — this is just the builder for now.",
+    );
+  };
+
+  // Shared between Single and Intervals modes — the playlist name plus the
+  // Single/Intervals and Running/Cycling toggles.
+  const sharedHeader = (
+    <View>
       <Text style={styles.header}>{playlistName}</Text>
 
       <View style={styles.modeSwitch}>
         <Pressable
+          style={[styles.modeTab, workoutMode === 'single' && styles.modeTabActive]}
+          onPress={() => setWorkoutMode('single')}
+        >
+          <Text style={[styles.modeTabText, workoutMode === 'single' && styles.modeTabTextActive]}>Single</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.modeTab, workoutMode === 'intervals' && styles.modeTabActive]}
+          onPress={() => setWorkoutMode('intervals')}
+        >
+          <Text style={[styles.modeTabText, workoutMode === 'intervals' && styles.modeTabTextActive]}>
+            Intervals
+          </Text>
+        </Pressable>
+      </View>
+
+      <View style={[styles.modeSwitch, styles.subModeSwitch]}>
+        <Pressable
           style={[styles.modeTab, activity === 'running' && styles.modeTabActive]}
-          onPress={() => {
-            setActivity('running');
-            setCadence(DEFAULT_CADENCE.running);
-          }}
+          onPress={() => handleActivityChange('running')}
         >
           <Text style={[styles.modeTabText, activity === 'running' && styles.modeTabTextActive]}>Running</Text>
         </Pressable>
         <Pressable
           style={[styles.modeTab, activity === 'cycling' && styles.modeTabActive]}
-          onPress={() => {
-            setActivity('cycling');
-            setInputMode('cadence'); // pace-based input is running-only
-            setCadence(DEFAULT_CADENCE.cycling);
-          }}
+          onPress={() => handleActivityChange('cycling')}
         >
           <Text style={[styles.modeTabText, activity === 'cycling' && styles.modeTabTextActive]}>Cycling</Text>
         </Pressable>
       </View>
+    </View>
+  );
+
+  if (workoutMode === 'intervals') {
+    // No outer ScrollView here on purpose: the segment list's drag-to-reorder
+    // gesture needs to own touch handling, and nesting it inside a plain
+    // scroll container causes them to fight over the gesture. IntervalBuilder
+    // is the single scrollable surface instead, with the shared header/start
+    // button passed in so everything still scrolls together.
+    return (
+      <IntervalBuilder
+        activity={activity}
+        unit={unit}
+        segments={segments}
+        onChange={setSegments}
+        header={sharedHeader}
+        footer={
+          <Pressable style={styles.button} onPress={handleStartIntervalWorkout}>
+            <Text style={styles.buttonText}>Start workout</Text>
+          </Pressable>
+        }
+      />
+    );
+  }
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      {sharedHeader}
 
       {activity === 'running' && (
         <View style={[styles.modeSwitch, styles.subModeSwitch]}>
@@ -81,7 +149,9 @@ export default function CadenceInputScreen({ route, navigation }: Props) {
             style={[styles.modeTab, inputMode === 'cadence' && styles.modeTabActive]}
             onPress={() => setInputMode('cadence')}
           >
-            <Text style={[styles.modeTabText, inputMode === 'cadence' && styles.modeTabTextActive]}>By cadence</Text>
+            <Text style={[styles.modeTabText, inputMode === 'cadence' && styles.modeTabTextActive]}>
+              By cadence
+            </Text>
           </Pressable>
           <Pressable
             style={[styles.modeTab, inputMode === 'pace' && styles.modeTabActive]}
@@ -124,23 +194,18 @@ export default function CadenceInputScreen({ route, navigation }: Props) {
       />
 
       <Text style={styles.label}>Tolerance (+/- {unit})</Text>
-      <TextInput
-        style={styles.input}
-        value={tolerance}
-        onChangeText={setTolerance}
-        keyboardType="number-pad"
-        placeholder="e.g. 5"
-      />
+      <TextInput style={styles.input} value={tolerance} onChangeText={setTolerance} keyboardType="number-pad" />
 
-      <Pressable style={styles.button} onPress={handleSubmit}>
+      <Pressable style={styles.button} onPress={handleSingleSubmit}>
         <Text style={styles.buttonText}>Find matching songs</Text>
       </Pressable>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, padding: 24 },
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { padding: 24, paddingBottom: 48 },
   header: { fontSize: 22, fontWeight: '700', color: colors.text, marginBottom: 24 },
   modeSwitch: {
     flexDirection: 'row',
