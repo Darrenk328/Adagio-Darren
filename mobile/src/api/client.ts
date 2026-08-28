@@ -59,3 +59,55 @@ export async function matchTracks(tracks: Track[], cadence: number, tolerance: n
   const { data } = await backend.post<MatchResult>('/match', { tracks, cadence, tolerance });
   return data;
 }
+
+export type PlaybackState = {
+  isPlaying: boolean;
+  device: { id: string; name: string } | null;
+  progressMs: number | null;
+  item: { id: string; name: string } | null;
+} | null;
+
+// Thrown by the playback functions below when Spotify has no active
+// device — i.e. the user doesn't have Spotify open anywhere right now.
+export class NoActiveDeviceError extends Error {
+  constructor() {
+    super('No active Spotify device found');
+    this.name = 'NoActiveDeviceError';
+  }
+}
+
+function authHeader(accessToken: string) {
+  return { headers: { Authorization: `Bearer ${accessToken}` } };
+}
+
+async function callPlaybackEndpoint<T>(request: () => Promise<{ data: T }>): Promise<T> {
+  try {
+    const { data } = await request();
+    return data;
+  } catch (err: any) {
+    if (err?.response?.status === 409 && err.response.data?.error === 'NO_ACTIVE_DEVICE') {
+      throw new NoActiveDeviceError();
+    }
+    throw err;
+  }
+}
+
+export function getPlaybackState(accessToken: string) {
+  return callPlaybackEndpoint<PlaybackState>(() => backend.get('/playback/state', authHeader(accessToken)));
+}
+
+export function startPlayback(accessToken: string, trackIds: string[]) {
+  return callPlaybackEndpoint(() => backend.post('/playback/play', { trackIds }, authHeader(accessToken)));
+}
+
+export function pausePlayback(accessToken: string) {
+  return callPlaybackEndpoint(() => backend.post('/playback/pause', {}, authHeader(accessToken)));
+}
+
+export function resumePlayback(accessToken: string) {
+  return callPlaybackEndpoint(() => backend.post('/playback/resume', {}, authHeader(accessToken)));
+}
+
+export function skipToNextTrack(accessToken: string) {
+  return callPlaybackEndpoint(() => backend.post('/playback/next', {}, authHeader(accessToken)));
+}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Image } from 'react-native';
+import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Image } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import { fetchPlaylistTracks, matchTracks, MatchedTrack } from '../api/client';
@@ -13,8 +13,8 @@ const TIER_LABEL: Record<MatchedTrack['matchTier'], string> = {
   widened: 'wider range',
 };
 
-export default function ResultsScreen({ route }: Props) {
-  const { playlistId, cadence, tolerance, unit } = route.params;
+export default function ResultsScreen({ route, navigation }: Props) {
+  const { playlistId, playlistName, cadence, tolerance, unit } = route.params;
   const { accessToken } = useAuth();
   const [matches, setMatches] = useState<MatchedTrack[]>([]);
   const [usedTolerance, setUsedTolerance] = useState(tolerance);
@@ -67,6 +67,7 @@ export default function ResultsScreen({ route }: Props) {
         </Text>
       )}
       <FlatList
+        style={styles.list}
         data={matches}
         keyExtractor={(item) => item.id}
         ListEmptyComponent={
@@ -89,6 +90,18 @@ export default function ResultsScreen({ route }: Props) {
             <Text style={styles.bpm}>{Math.round(item.effectiveBpm)}</Text>
           </View>
         )}
+        ListFooterComponent={
+          matches.length > 0 ? (
+            <View style={styles.footer}>
+              <Pressable
+                style={styles.startButton}
+                onPress={() => navigation.navigate('NowPlaying', { playlistName, queue: matches, unit })}
+              >
+                <Text style={styles.startButtonText}>Start workout</Text>
+              </Pressable>
+            </View>
+          ) : null
+        }
       />
     </View>
   );
@@ -96,6 +109,7 @@ export default function ResultsScreen({ route }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background, paddingTop: 16 },
+  list: { flex: 1 },
   center: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
   loadingText: { color: colors.textMuted, marginTop: 12 },
   header: { fontSize: 16, fontWeight: '600', color: colors.text, paddingHorizontal: 20, marginBottom: 4 },
@@ -116,4 +130,7 @@ const styles = StyleSheet.create({
   bpm: { fontSize: 15, fontWeight: '700', color: colors.secondary },
   empty: { textAlign: 'center', color: colors.textMuted, marginTop: 40, paddingHorizontal: 24 },
   error: { color: colors.text, textAlign: 'center', paddingHorizontal: 24 },
+  footer: { padding: 20, borderTopWidth: 1, borderTopColor: colors.border },
+  startButton: { backgroundColor: colors.primary, paddingVertical: 16, borderRadius: 12, alignItems: 'center' },
+  startButtonText: { color: colors.primaryText, fontSize: 16, fontWeight: '600' },
 });

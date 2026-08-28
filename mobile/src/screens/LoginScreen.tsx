@@ -51,7 +51,7 @@ export default function LoginScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Adagio</Text>
-      <Text style={styles.subtitle}>Match your playlist to your running cadence</Text>
+      <Text style={styles.subtitle}>Match your playlist to your running (or cycling) cadence</Text>
 
       <Pressable
         style={[styles.button, !request && styles.buttonDisabled]}

@@ -5,6 +5,7 @@ import cors from 'cors';
 import authRoutes from './routes/auth.js';
 import playlistRoutes from './routes/playlists.js';
 import matchRoutes from './routes/match.js';
+import playbackRoutes from './routes/playback.js';
 
 const app = express();
 
@@ -16,6 +17,7 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
 app.use('/auth', authRoutes);
 app.use('/playlists', playlistRoutes);
 app.use('/match', matchRoutes);
+app.use('/playback', playbackRoutes);
 
 // Basic error handler so unexpected failures return JSON, not an HTML stack trace.
 app.use((err, _req, res, _next) => {

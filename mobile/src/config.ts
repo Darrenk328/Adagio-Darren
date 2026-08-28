@@ -5,4 +5,13 @@ export const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://localh
 
 export const SPOTIFY_CLIENT_ID = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID ?? '';
 export const SPOTIFY_REDIRECT_URI = 'adagio://callback';
-export const SPOTIFY_SCOPES = ['playlist-read-private', 'playlist-read-collaborative', 'user-read-email'];
+export const SPOTIFY_SCOPES = [
+  'playlist-read-private',
+  'playlist-read-collaborative',
+  'user-read-email',
+  // Needed for the Now Playing screen's playback controls (Spotify Connect
+  // Web API — controls whatever device the user already has Spotify active
+  // on, no in-app audio SDK).
+  'user-modify-playback-state',
+  'user-read-playback-state',
+];

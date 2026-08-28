@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import { parsePaceString, estimateCadenceFromPace } from '../utils/paceToCadence';
 import { useSettings } from '../settings/SettingsContext';
+import { useAuth } from '../auth/AuthContext';
+import { fetchPlaylistTracks, matchTracks } from '../api/client';
 import IntervalBuilder from '../components/IntervalBuilder';
 import type { Segment } from '../types/workout';
 import type { WorkoutStackParamList } from '../navigation/WorkoutStack';
@@ -21,9 +23,11 @@ const DEFAULT_CADENCE: Record<Activity, string> = { running: '170', cycling: '90
 export default function WorkoutSetupScreen({ route, navigation }: Props) {
   const { playlistId, playlistName } = route.params;
   const { defaultTolerance } = useSettings();
+  const { accessToken } = useAuth();
 
   const [workoutMode, setWorkoutMode] = useState<WorkoutMode>('single');
   const [activity, setActivity] = useState<Activity>('running');
+  const [isStartingIntervals, setIsStartingIntervals] = useState(false);
 
   // Single-mode state
   const [inputMode, setInputMode] = useState<InputMode>('cadence');
@@ -66,15 +70,32 @@ export default function WorkoutSetupScreen({ route, navigation }: Props) {
     });
   };
 
-  const handleStartIntervalWorkout = () => {
+  const handleStartIntervalWorkout = async () => {
     if (segments.length === 0) {
       Alert.alert('Add at least one segment', 'Build your interval workout before starting.');
       return;
     }
-    Alert.alert(
-      'Coming soon',
-      "Live interval playback (auto-advancing through segments and re-matching songs) isn't wired up yet — this is just the builder for now.",
-    );
+    if (!accessToken) return;
+
+    setIsStartingIntervals(true);
+    try {
+      // Matches the first segment's target to build the initial queue.
+      // Re-matching + swapping the queue as later segments start is a
+      // follow-up — for now the same queue plays through the whole workout.
+      const tracks = await fetchPlaylistTracks(accessToken, playlistId);
+      const result = await matchTracks(tracks, segments[0].target, defaultTolerance);
+
+      if (result.matches.length === 0) {
+        Alert.alert('No matches found', "Couldn't find any songs matching the first segment's target tempo.");
+        return;
+      }
+
+      navigation.navigate('NowPlaying', { playlistName, queue: result.matches, segments, unit });
+    } catch (err) {
+      Alert.alert('Something went wrong', 'Could not load matching songs for this workout.');
+    } finally {
+      setIsStartingIntervals(false);
+    }
   };
 
   // Shared between Single and Intervals modes — the playlist name plus the
@@ -131,8 +152,16 @@ export default function WorkoutSetupScreen({ route, navigation }: Props) {
         onChange={setSegments}
         header={sharedHeader}
         footer={
-          <Pressable style={styles.button} onPress={handleStartIntervalWorkout}>
-            <Text style={styles.buttonText}>Start workout</Text>
+          <Pressable
+            style={[styles.button, isStartingIntervals && styles.buttonDisabled]}
+            onPress={handleStartIntervalWorkout}
+            disabled={isStartingIntervals}
+          >
+            {isStartingIntervals ? (
+              <ActivityIndicator color={colors.primaryText} />
+            ) : (
+              <Text style={styles.buttonText}>Start workout</Text>
+            )}
           </Pressable>
         }
       />
@@ -240,4 +269,5 @@ const styles = StyleSheet.create({
     marginTop: 32,
   },
   buttonText: { color: colors.primaryText, fontSize: 16, fontWeight: '600' },
+  buttonDisabled: { opacity: 0.6 },
 });
