@@ -4,9 +4,9 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import { fetchPlaylists, Playlist } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import type { RootStackParamList } from '../navigation/AppNavigator';
+import type { WorkoutStackParamList } from '../navigation/WorkoutStack';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'PlaylistPicker'>;
+type Props = NativeStackScreenProps<WorkoutStackParamList, 'PlaylistPicker'>;
 
 export default function PlaylistPickerScreen({ navigation }: Props) {
   const { accessToken } = useAuth();

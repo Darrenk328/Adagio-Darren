@@ -3,11 +3,11 @@ import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import { parsePaceString, estimateCadenceFromPace } from '../utils/paceToCadence';
-import type { RootStackParamList } from '../navigation/AppNavigator';
+import { useSettings } from '../settings/SettingsContext';
+import type { WorkoutStackParamList } from '../navigation/WorkoutStack';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'CadenceInput'>;
+type Props = NativeStackScreenProps<WorkoutStackParamList, 'CadenceInput'>;
 
-const DEFAULT_TOLERANCE = 5;
 type InputMode = 'cadence' | 'pace';
 type Activity = 'running' | 'cycling';
 
@@ -16,10 +16,11 @@ const DEFAULT_CADENCE: Record<Activity, string> = { running: '170', cycling: '90
 
 export default function CadenceInputScreen({ route, navigation }: Props) {
   const { playlistId, playlistName } = route.params;
+  const { defaultTolerance } = useSettings();
   const [activity, setActivity] = useState<Activity>('running');
   const [inputMode, setInputMode] = useState<InputMode>('cadence');
   const [cadence, setCadence] = useState('170');
-  const [tolerance, setTolerance] = useState(String(DEFAULT_TOLERANCE));
+  const [tolerance, setTolerance] = useState(String(defaultTolerance));
   const [paceInput, setPaceInput] = useState('');
 
   const unit = UNIT[activity];
@@ -43,7 +44,7 @@ export default function CadenceInputScreen({ route, navigation }: Props) {
       playlistId,
       playlistName,
       cadence: cadenceNum,
-      tolerance: toleranceNum || DEFAULT_TOLERANCE,
+      tolerance: toleranceNum || defaultTolerance,
       unit,
     });
   };

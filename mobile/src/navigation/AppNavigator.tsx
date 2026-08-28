@@ -1,23 +1,11 @@
 import React from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import { useAuth } from '../auth/AuthContext';
 
 import LoginScreen from '../screens/LoginScreen';
-import PlaylistPickerScreen from '../screens/PlaylistPickerScreen';
-import CadenceInputScreen from '../screens/CadenceInputScreen';
-import ResultsScreen from '../screens/ResultsScreen';
-
-export type RootStackParamList = {
-  Login: undefined;
-  PlaylistPicker: undefined;
-  CadenceInput: { playlistId: string; playlistName: string };
-  Results: { playlistId: string; playlistName: string; cadence: number; tolerance: number; unit: string };
-};
-
-const Stack = createNativeStackNavigator<RootStackParamList>();
+import MainTabs from './MainTabs';
 
 const navTheme = {
   ...DefaultTheme,
@@ -44,21 +32,7 @@ export default function AppNavigator() {
     );
   }
 
-  return (
-    <NavigationContainer theme={navTheme}>
-      <Stack.Navigator screenOptions={{ headerTitleStyle: { color: colors.text } }}>
-        {!accessToken ? (
-          <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
-        ) : (
-          <>
-            <Stack.Screen name="PlaylistPicker" component={PlaylistPickerScreen} options={{ title: 'Playlists' }} />
-            <Stack.Screen name="CadenceInput" component={CadenceInputScreen} options={{ title: 'Set cadence' }} />
-            <Stack.Screen name="Results" component={ResultsScreen} options={{ title: 'Matches' }} />
-          </>
-        )}
-      </Stack.Navigator>
-    </NavigationContainer>
-  );
+  return <NavigationContainer theme={navTheme}>{accessToken ? <MainTabs /> : <LoginScreen />}</NavigationContainer>;
 }
 
 const styles = StyleSheet.create({

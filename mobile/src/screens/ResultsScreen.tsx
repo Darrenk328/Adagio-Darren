@@ -4,9 +4,9 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import { fetchPlaylistTracks, matchTracks, MatchedTrack } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import type { RootStackParamList } from '../navigation/AppNavigator';
+import type { WorkoutStackParamList } from '../navigation/WorkoutStack';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Results'>;
+type Props = NativeStackScreenProps<WorkoutStackParamList, 'Results'>;
 
 const TIER_LABEL: Record<MatchedTrack['matchTier'], string> = {
   exact: '',
