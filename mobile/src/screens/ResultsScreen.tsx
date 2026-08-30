@@ -95,7 +95,7 @@ export default function ResultsScreen({ route, navigation }: Props) {
             <View style={styles.footer}>
               <Pressable
                 style={styles.startButton}
-                onPress={() => navigation.navigate('NowPlaying', { playlistName, queue: matches, unit })}
+                onPress={() => navigation.navigate('NowPlaying', { playlistId, playlistName, queue: matches, unit })}
               >
                 <Text style={styles.startButtonText}>Start workout</Text>
               </Pressable>

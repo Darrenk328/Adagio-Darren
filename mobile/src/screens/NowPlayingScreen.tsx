@@ -5,7 +5,17 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import { formatDuration } from '../utils/duration';
 import { useAuth } from '../auth/AuthContext';
-import { startPlayback, pausePlayback, resumePlayback, skipToNextTrack, NoActiveDeviceError } from '../api/client';
+import { useSettings } from '../settings/SettingsContext';
+import {
+  startPlayback,
+  pausePlayback,
+  resumePlayback,
+  skipToNextTrack,
+  fetchPlaylistTracks,
+  matchTracks,
+  NoActiveDeviceError,
+  MatchedTrack,
+} from '../api/client';
 import type { WorkoutStackParamList } from '../navigation/WorkoutStack';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'NowPlaying'>;
@@ -13,20 +23,32 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'NowPlaying'>;
 type DeviceStatus = 'checking' | 'ready' | 'no-device' | 'error';
 
 export default function NowPlayingScreen({ route }: Props) {
-  const { playlistName, queue, segments, unit } = route.params;
+  const { playlistId, playlistName, segments, unit } = route.params;
   const { accessToken } = useAuth();
+  const { defaultTolerance } = useSettings();
 
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>('checking');
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
+  const [queue, setQueue] = useState<MatchedTrack[]>(route.params.queue);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [segmentIndex, setSegmentIndex] = useState(0);
   const [segmentRemainingSec, setSegmentRemainingSec] = useState(segments?.[0]?.durationSec ?? 0);
   const [segmentsComplete, setSegmentsComplete] = useState(false);
+  const [isSwitchingSegment, setIsSwitchingSegment] = useState(false);
+  const [transitionNotice, setTransitionNotice] = useState<string | null>(null);
 
   const currentTrack = queue[currentTrackIndex];
   const currentSegment = segments?.[segmentIndex];
+
+  // isPlaying as a ref too, so the async segment-transition below can check
+  // the *current* pause state even if the user paused mid-transition,
+  // without the async callback closing over a stale value.
+  const isPlayingRef = useRef(isPlaying);
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
   const begin = useCallback(async () => {
     if (!accessToken) return;
@@ -56,7 +78,9 @@ export default function NowPlayingScreen({ route }: Props) {
 
   // Single ticking clock driving both the overall elapsed counter and (if
   // this is an interval workout) the current segment's countdown. Only runs
-  // while actually playing — pausing freezes both, nothing resets.
+  // while actually playing — pausing freezes both, nothing resets, and
+  // (since this effect is torn down whenever isPlaying goes false) the
+  // segment never advances while paused either.
   useEffect(() => {
     if (!isPlaying || deviceStatus !== 'ready') return;
 
@@ -84,17 +108,64 @@ export default function NowPlayingScreen({ route }: Props) {
     return () => clearInterval(interval);
   }, [isPlaying, deviceStatus, segments]);
 
-  // When segmentIndex advances, load that segment's duration into the countdown.
+  // Re-matches songs to the new segment's target and swaps the playback
+  // queue over — transitions immediately rather than waiting for the
+  // current song to finish. Waiting would feel smoother, but the whole
+  // point of an interval workout is hearing tempo-matched music exactly
+  // when the target changes (e.g. fast music right as a work interval
+  // starts) - delaying that until some arbitrary song boundary would
+  // undercut the reason this app exists. The tradeoff is an audible cut
+  // mid-song, which we accept.
+  const transitionToSegment = useCallback(
+    async (index: number) => {
+      if (!accessToken || !segments) return;
+      const target = segments[index];
+      setIsSwitchingSegment(true);
+      setTransitionNotice(null);
+      try {
+        const tracks = await fetchPlaylistTracks(accessToken, playlistId);
+        const result = await matchTracks(tracks, target.target, defaultTolerance);
+
+        if (result.matches.length === 0) {
+          setTransitionNotice("No matches for this segment's target — keeping the current playlist going.");
+          return;
+        }
+
+        setQueue(result.matches);
+        setCurrentTrackIndex(0);
+        await startPlayback(
+          accessToken,
+          result.matches.map((t) => t.id),
+        );
+        // If the user paused while this was in flight, honor that instead
+        // of leaving the new queue playing out from under them.
+        if (!isPlayingRef.current) {
+          await pausePlayback(accessToken);
+        }
+      } catch (err) {
+        if (err instanceof NoActiveDeviceError) {
+          setDeviceStatus('no-device');
+        } else {
+          console.error(err);
+          setTransitionNotice("Couldn't switch songs for this segment — keeping the current playlist going.");
+        }
+      } finally {
+        setIsSwitchingSegment(false);
+      }
+    },
+    [accessToken, playlistId, segments, defaultTolerance],
+  );
+
+  // When segmentIndex advances, load that segment's duration into the
+  // countdown and kick off the re-match + queue swap above.
   const prevSegmentIndex = useRef(segmentIndex);
   useEffect(() => {
     if (prevSegmentIndex.current !== segmentIndex && segments) {
       setSegmentRemainingSec(segments[segmentIndex].durationSec);
       prevSegmentIndex.current = segmentIndex;
-      // NOTE: re-matching songs to this segment's target and swapping the
-      // playback queue happens in a follow-up — for now the same queue
-      // keeps playing across segment transitions.
+      transitionToSegment(segmentIndex);
     }
-  }, [segmentIndex, segments]);
+  }, [segmentIndex, segments, transitionToSegment]);
 
   const togglePause = async () => {
     if (!accessToken || isBusy) return;
@@ -195,6 +266,15 @@ export default function NowPlayingScreen({ route }: Props) {
               <Text style={styles.segmentTarget}>
                 Target: {currentSegment?.target} {unit ?? ''}
               </Text>
+              {isSwitchingSegment && (
+                <View style={styles.switchingRow}>
+                  <ActivityIndicator size="small" color={colors.textMuted} />
+                  <Text style={styles.switchingText}>Finding songs for this segment…</Text>
+                </View>
+              )}
+              {transitionNotice && !isSwitchingSegment && (
+                <Text style={styles.transitionNotice}>{transitionNotice}</Text>
+              )}
             </>
           )}
         </View>
@@ -246,6 +326,9 @@ const styles = StyleSheet.create({
   segmentCountdown: { fontSize: 40, fontWeight: '700', color: colors.text, marginTop: 4 },
   segmentTarget: { fontSize: 13, color: colors.secondary, fontWeight: '600', marginTop: 4 },
   segmentComplete: { fontSize: 17, fontWeight: '700', color: colors.text },
+  switchingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+  switchingText: { fontSize: 12, color: colors.textMuted },
+  transitionNotice: { fontSize: 12, color: colors.textMuted, marginTop: 10, textAlign: 'center', lineHeight: 17 },
   elapsedLabel: { fontSize: 12, color: colors.textMuted, marginTop: 28, textTransform: 'uppercase', letterSpacing: 0.5 },
   elapsedTime: { fontSize: 22, fontWeight: '600', color: colors.text, marginTop: 2 },
   controls: { flexDirection: 'row', alignItems: 'center', marginTop: 'auto', gap: 24, paddingBottom: 16 },

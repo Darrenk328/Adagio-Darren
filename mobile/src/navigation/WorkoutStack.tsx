@@ -13,7 +13,13 @@ export type WorkoutStackParamList = {
   PlaylistPicker: undefined;
   WorkoutSetup: { playlistId: string; playlistName: string };
   Results: { playlistId: string; playlistName: string; cadence: number; tolerance: number; unit: string };
-  NowPlaying: { playlistName: string; queue: MatchedTrack[]; segments?: Segment[]; unit?: string };
+  NowPlaying: {
+    playlistId: string;
+    playlistName: string;
+    queue: MatchedTrack[];
+    segments?: Segment[];
+    unit?: string;
+  };
 };
 
 const Stack = createNativeStackNavigator<WorkoutStackParamList>();

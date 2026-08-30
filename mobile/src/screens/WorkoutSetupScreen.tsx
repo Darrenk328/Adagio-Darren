@@ -103,7 +103,7 @@ export default function WorkoutSetupScreen({ route, navigation }: Props) {
         return;
       }
 
-      navigation.navigate('NowPlaying', { playlistName, queue: result.matches, segments, unit });
+      navigation.navigate('NowPlaying', { playlistId, playlistName, queue: result.matches, segments, unit });
     } catch (err) {
       Alert.alert('Something went wrong', 'Could not load matching songs for this workout.');
     } finally {
