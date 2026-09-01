@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, Alert } from 'react-native';
-import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
+import { View, Text, TextInput, Pressable, StyleSheet, FlatList, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { parseDurationString, formatDuration } from '../utils/duration';
@@ -59,14 +58,22 @@ export default function IntervalBuilder({ activity, unit, paceUnit, segments, on
   const deleteSegment = (id: string) => onChange(segments.filter((s) => s.id !== id));
   const addSegment = () => onChange([...segments, newSegment(unit)]);
 
+  const moveSegment = (index: number, direction: -1 | 1) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= segments.length) return;
+    const next = [...segments];
+    [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+    onChange(next);
+  };
+
   const totalDuration = segments.reduce((sum, s) => sum + s.durationSec, 0);
 
   return (
     <View style={styles.container}>
       {/* A fixed (non-scrolling) sibling above the list, not a
-          ListHeaderComponent — react-native-draggable-flatlist's floating
-          drag overlay doesn't account for ListHeaderComponent height, which
-          made the dragged card render above the header mid-drag. */}
+          ListHeaderComponent — kept from the earlier drag-and-drop layout
+          since it's a proven-reliable structure (see FlatList-swallows-
+          sibling-touches note in project memory). */}
       <View style={styles.fixedHeader}>
         {header}
         <Text style={styles.label}>Presets</Text>
@@ -85,21 +92,22 @@ export default function IntervalBuilder({ activity, unit, paceUnit, segments, on
         )}
       </View>
 
-      <DraggableFlatList
-        containerStyle={styles.list}
+      <FlatList
+        style={styles.list}
         contentContainerStyle={styles.listContent}
         data={segments}
         keyExtractor={(item) => item.id}
-        onDragEnd={({ data }) => onChange(data)}
         keyboardShouldPersistTaps="handled"
-        renderItem={({ item, drag, isActive }: RenderItemParams<Segment>) => (
+        renderItem={({ item, index }) => (
           <SegmentRow
             segment={item}
             unit={unit}
             paceUnit={paceUnit}
             activity={activity}
-            isActive={isActive}
-            onDrag={drag}
+            canMoveUp={index > 0}
+            canMoveDown={index < segments.length - 1}
+            onMoveUp={() => moveSegment(index, -1)}
+            onMoveDown={() => moveSegment(index, 1)}
             onUpdate={(patch) => updateSegment(item.id, patch)}
             onDuplicate={() => duplicateSegment(item)}
             onDelete={() => deleteSegment(item.id)}
@@ -125,8 +133,10 @@ function SegmentRow({
   unit,
   paceUnit,
   activity,
-  isActive,
-  onDrag,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
   onUpdate,
   onDuplicate,
   onDelete,
@@ -135,8 +145,10 @@ function SegmentRow({
   unit: string;
   paceUnit: PaceUnit;
   activity: Activity;
-  isActive: boolean;
-  onDrag: () => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
   onUpdate: (patch: Partial<Segment>) => void;
   onDuplicate: () => void;
   onDelete: () => void;
@@ -175,72 +187,75 @@ function SegmentRow({
   };
 
   return (
-    <ScaleDecorator>
-      <View style={[rowStyles.row, isActive && rowStyles.rowActive]}>
-        <Pressable onPressIn={onDrag} style={rowStyles.dragHandle} hitSlop={8}>
-          <Ionicons name="reorder-three-outline" size={22} color={colors.textMuted} />
+    <View style={rowStyles.row}>
+      <View style={rowStyles.moveColumn}>
+        <Pressable onPress={onMoveUp} disabled={!canMoveUp} hitSlop={8} style={rowStyles.moveButton}>
+          <Ionicons name="chevron-up" size={18} color={canMoveUp ? colors.textMuted : colors.border} />
         </Pressable>
+        <Pressable onPress={onMoveDown} disabled={!canMoveDown} hitSlop={8} style={rowStyles.moveButton}>
+          <Ionicons name="chevron-down" size={18} color={canMoveDown ? colors.textMuted : colors.border} />
+        </Pressable>
+      </View>
 
-        <View style={rowStyles.fields}>
-          <TextInput
-            style={rowStyles.labelInput}
-            value={segment.label}
-            onChangeText={(text) => onUpdate({ label: text })}
-            placeholder="Segment name"
-            placeholderTextColor={colors.textMuted}
-          />
-          <View style={rowStyles.inputRow}>
-            <View style={rowStyles.inputGroup}>
-              <Text style={rowStyles.inputCaption}>Duration</Text>
+      <View style={rowStyles.fields}>
+        <TextInput
+          style={rowStyles.labelInput}
+          value={segment.label}
+          onChangeText={(text) => onUpdate({ label: text })}
+          placeholder="Segment name"
+          placeholderTextColor={colors.textMuted}
+        />
+        <View style={rowStyles.inputRow}>
+          <View style={rowStyles.inputGroup}>
+            <Text style={rowStyles.inputCaption}>Duration</Text>
+            <TextInput
+              style={rowStyles.smallInput}
+              value={durationText}
+              onChangeText={setDurationText}
+              onBlur={handleDurationBlur}
+              keyboardType="numbers-and-punctuation"
+              placeholder="mm:ss"
+            />
+          </View>
+          <View style={rowStyles.inputGroup}>
+            <Text style={rowStyles.inputCaption}>{showPace ? `Pace (/${paceUnit})` : `Target (${unit})`}</Text>
+            {showPace ? (
               <TextInput
                 style={rowStyles.smallInput}
-                value={durationText}
-                onChangeText={setDurationText}
-                onBlur={handleDurationBlur}
+                value={paceInput}
+                onChangeText={handlePaceChange}
+                onBlur={() => setShowPace(false)}
                 keyboardType="numbers-and-punctuation"
-                placeholder="mm:ss"
+                placeholder={paceUnit === 'mi' ? 'e.g. 7:30' : 'e.g. 4:40'}
+                autoFocus
               />
-            </View>
-            <View style={rowStyles.inputGroup}>
-              <Text style={rowStyles.inputCaption}>{showPace ? `Pace (/${paceUnit})` : `Target (${unit})`}</Text>
-              {showPace ? (
-                <TextInput
-                  style={rowStyles.smallInput}
-                  value={paceInput}
-                  onChangeText={handlePaceChange}
-                  onBlur={() => setShowPace(false)}
-                  keyboardType="numbers-and-punctuation"
-                  placeholder={paceUnit === 'mi' ? 'e.g. 7:30' : 'e.g. 4:40'}
-                  autoFocus
-                />
-              ) : (
-                <TextInput
-                  style={rowStyles.smallInput}
-                  value={targetText}
-                  onChangeText={setTargetText}
-                  onBlur={handleTargetBlur}
-                  keyboardType="number-pad"
-                />
-              )}
-            </View>
-            {activity === 'running' && (
-              <Pressable onPress={() => setShowPace((v) => !v)} style={rowStyles.paceToggle}>
-                <Text style={rowStyles.paceToggleText}>{showPace ? unit : 'Pace'}</Text>
-              </Pressable>
+            ) : (
+              <TextInput
+                style={rowStyles.smallInput}
+                value={targetText}
+                onChangeText={setTargetText}
+                onBlur={handleTargetBlur}
+                keyboardType="number-pad"
+              />
             )}
           </View>
-        </View>
-
-        <View style={rowStyles.actions}>
-          <Pressable onPress={onDuplicate} hitSlop={8} style={rowStyles.actionButton}>
-            <Ionicons name="copy-outline" size={18} color={colors.textMuted} />
-          </Pressable>
-          <Pressable onPress={onDelete} hitSlop={8} style={rowStyles.actionButton}>
-            <Ionicons name="trash-outline" size={18} color={colors.textMuted} />
-          </Pressable>
+          {activity === 'running' && (
+            <Pressable onPress={() => setShowPace((v) => !v)} style={rowStyles.paceToggle}>
+              <Text style={rowStyles.paceToggleText}>{showPace ? unit : 'Pace'}</Text>
+            </Pressable>
+          )}
         </View>
       </View>
-    </ScaleDecorator>
+
+      <View style={rowStyles.actions}>
+        <Pressable onPress={onDuplicate} hitSlop={8} style={rowStyles.actionButton}>
+          <Ionicons name="copy-outline" size={18} color={colors.textMuted} />
+        </Pressable>
+        <Pressable onPress={onDelete} hitSlop={8} style={rowStyles.actionButton}>
+          <Ionicons name="trash-outline" size={18} color={colors.textMuted} />
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -286,8 +301,8 @@ const rowStyles = StyleSheet.create({
     padding: 10,
     marginBottom: 8,
   },
-  rowActive: { borderColor: colors.secondary, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8 },
-  dragHandle: { paddingTop: 6, paddingRight: 8 },
+  moveColumn: { alignItems: 'center', paddingTop: 2, paddingRight: 6 },
+  moveButton: { paddingVertical: 2 },
   fields: { flex: 1 },
   labelInput: { fontSize: 15, fontWeight: '600', color: colors.text, paddingVertical: 4, marginBottom: 6 },
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
