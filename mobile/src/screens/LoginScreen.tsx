@@ -15,7 +15,7 @@ const discovery = {
 };
 
 export default function LoginScreen() {
-  const { login } = useAuth();
+  const { login, sessionExpiredMessage } = useAuth();
   const [isConnecting, setIsConnecting] = useState(false);
 
   const [request, , promptAsync] = AuthSession.useAuthRequest(
@@ -53,6 +53,12 @@ export default function LoginScreen() {
       <Text style={styles.title}>Adagio</Text>
       <Text style={styles.subtitle}>Match your playlist to your running (or cycling) cadence</Text>
 
+      {sessionExpiredMessage && (
+        <View style={styles.sessionExpiredBanner}>
+          <Text style={styles.sessionExpiredText}>{sessionExpiredMessage}</Text>
+        </View>
+      )}
+
       <Pressable
         style={[styles.button, !request && styles.buttonDisabled]}
         onPress={handleLogin}
@@ -78,6 +84,17 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 40, fontWeight: '700', color: colors.text, marginBottom: 8 },
   subtitle: { fontSize: 16, color: colors.textMuted, marginBottom: 48, textAlign: 'center' },
+  sessionExpiredBanner: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 24,
+    width: '100%',
+  },
+  sessionExpiredText: { color: colors.text, fontSize: 14, textAlign: 'center' },
   button: {
     backgroundColor: colors.primary,
     paddingVertical: 16,
