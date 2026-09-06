@@ -8,6 +8,7 @@ import { formatDuration } from '../utils/duration';
 import { useAuth } from '../auth/AuthContext';
 import { useSettings } from '../settings/SettingsContext';
 import { useWorkoutSession } from '../workout/WorkoutSessionContext';
+import { useCadenceNudges } from '../cadence/useCadenceNudges';
 import {
   startPlayback,
   pausePlayback,
@@ -25,7 +26,7 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'NowPlaying'>;
 type DeviceStatus = 'checking' | 'ready' | 'no-device' | 'error';
 
 export default function NowPlayingScreen({ route }: Props) {
-  const { playlistId, playlistName, segments, unit } = route.params;
+  const { playlistId, playlistName, segments, unit, targetCadence } = route.params;
   const { accessToken } = useAuth();
   const { defaultTolerance } = useSettings();
   const { setSession } = useWorkoutSession();
@@ -45,6 +46,18 @@ export default function NowPlayingScreen({ route }: Props) {
 
   const currentTrack = queue[currentTrackIndex];
   const currentSegment = segments?.[segmentIndex];
+
+  // Interval workouts take their target from the current segment;
+  // single-target workouts carry it as a route param instead (see
+  // ResultsScreen). Either way, voice nudges only need one number.
+  const activeTargetCadence = currentSegment?.target ?? targetCadence;
+
+  useCadenceNudges({
+    targetCadence: activeTargetCadence,
+    tolerance: defaultTolerance,
+    active: isPlaying && deviceStatus === 'ready' && !segmentsComplete,
+    accessToken,
+  });
 
   // isPlaying as a ref too, so the async segment-transition below can check
   // the *current* pause state even if the user paused mid-transition,

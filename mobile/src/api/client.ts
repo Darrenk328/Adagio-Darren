@@ -142,7 +142,7 @@ export async function matchTracks(tracks: Track[], cadence: number, tolerance: n
 
 export type PlaybackState = {
   isPlaying: boolean;
-  device: { id: string; name: string } | null;
+  device: { id: string; name: string; volumePercent: number | null } | null;
   progressMs: number | null;
   item: { id: string; name: string } | null;
 } | null;
@@ -190,4 +190,8 @@ export function resumePlayback(accessToken: string) {
 
 export function skipToNextTrack(accessToken: string) {
   return callPlaybackEndpoint(() => backend.post('/playback/next', {}, authHeader(accessToken)));
+}
+
+export function setPlaybackVolume(accessToken: string, volumePercent: number) {
+  return callPlaybackEndpoint(() => backend.post('/playback/volume', { volumePercent }, authHeader(accessToken)));
 }

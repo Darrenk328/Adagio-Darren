@@ -19,6 +19,9 @@ export type WorkoutStackParamList = {
     queue: MatchedTrack[];
     segments?: Segment[];
     unit?: string;
+    // Single-target workouts only — interval workouts get their target
+    // from the current segment instead. Used for voice coaching nudges.
+    targetCadence?: number;
   };
 };
 

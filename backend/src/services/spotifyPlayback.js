@@ -40,7 +40,9 @@ export async function getPlaybackState(accessToken) {
 
   return {
     isPlaying: data.is_playing,
-    device: data.device ? { id: data.device.id, name: data.device.name } : null,
+    device: data.device
+      ? { id: data.device.id, name: data.device.name, volumePercent: data.device.volume_percent ?? null }
+      : null,
     progressMs: data.progress_ms ?? null,
     item: data.item ? { id: data.item.id, name: data.item.name } : null,
   };
@@ -69,5 +71,20 @@ export async function resumePlayback(accessToken) {
 export async function skipToNext(accessToken) {
   return withDeviceErrorHandling(() =>
     axios.post(`${SPOTIFY_API_URL}/me/player/next`, {}, { headers: authHeaders(accessToken) }),
+  );
+}
+
+/**
+ * Sets the active device's volume (0-100). Used to duck playback briefly
+ * during a spoken cadence coaching nudge — see NowPlayingScreen's
+ * useCadenceNudges hook, which restores the prior volume once the nudge
+ * finishes speaking.
+ */
+export async function setVolume(accessToken, volumePercent) {
+  return withDeviceErrorHandling(() =>
+    axios.put(`${SPOTIFY_API_URL}/me/player/volume`, null, {
+      headers: authHeaders(accessToken),
+      params: { volume_percent: volumePercent },
+    }),
   );
 }

@@ -1,5 +1,12 @@
 import { Router } from 'express';
-import { getPlaybackState, playTracks, pausePlayback, resumePlayback, skipToNext } from '../services/spotifyPlayback.js';
+import {
+  getPlaybackState,
+  playTracks,
+  pausePlayback,
+  resumePlayback,
+  skipToNext,
+  setVolume,
+} from '../services/spotifyPlayback.js';
 
 const router = Router();
 
@@ -88,6 +95,23 @@ router.post(
     const accessToken = requireAccessToken(req, res);
     if (!accessToken) return;
     await skipToNext(accessToken);
+    res.json({ ok: true });
+  }),
+);
+
+// body: { volumePercent: number } — 0-100.
+router.post(
+  '/volume',
+  handlePlaybackErrors(async (req, res) => {
+    const accessToken = requireAccessToken(req, res);
+    if (!accessToken) return;
+
+    const { volumePercent } = req.body;
+    if (typeof volumePercent !== 'number' || volumePercent < 0 || volumePercent > 100) {
+      return res.status(400).json({ error: '"volumePercent" must be a number between 0 and 100' });
+    }
+
+    await setVolume(accessToken, volumePercent);
     res.json({ ok: true });
   }),
 );
