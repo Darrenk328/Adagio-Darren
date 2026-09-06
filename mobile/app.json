@@ -15,6 +15,7 @@
     },
     "android": {
       "package": "com.adagio.app"
-    }
+    },
+    "plugins": ["./plugins/withGarminCadence.js"]
   }
 }

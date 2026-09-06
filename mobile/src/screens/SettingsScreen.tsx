@@ -4,12 +4,29 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import { useAuth } from '../auth/AuthContext';
 import { useSettings } from '../settings/SettingsContext';
+import { useLiveCadence } from '../cadence/LiveCadenceContext';
 
 const GETSONGBPM_URL = 'https://getsongbpm.com';
+
+const STATUS_LABEL: Record<string, string> = {
+  idle: 'Not connected',
+  needsGCM: "Garmin Connect Mobile isn't installed",
+  opening: 'Opening Garmin Connect…',
+  found: 'Found device — waiting for connection…',
+  connected: 'Connecting…',
+  ready: 'Connected',
+  notConnected: 'Not connected',
+  bluetoothNotReady: 'Bluetooth not ready',
+  notFound: 'Device not found',
+  invalidDevice: 'Invalid device',
+  noDeviceReturned: "Couldn't find a device — try again",
+  unknown: 'Unknown status',
+};
 
 export default function SettingsScreen() {
   const { accessToken, logout } = useAuth();
   const { defaultTolerance, setDefaultTolerance, cadenceSource, setCadenceSource } = useSettings();
+  const { connectionStatus, deviceName, currentCadence, findDevice } = useLiveCadence();
   const [toleranceInput, setToleranceInput] = useState(String(defaultTolerance));
 
   const handleToleranceBlur = () => {
@@ -80,6 +97,24 @@ export default function SettingsScreen() {
           When set to Garmin Watch, live cadence from a paired watch drives in-workout voice nudges when your
           pace drifts from the target.
         </Text>
+
+        {cadenceSource === 'garmin' && (
+          <View style={styles.garminStatus}>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>{deviceName ?? 'Status'}</Text>
+              <Text style={styles.rowValue}>{STATUS_LABEL[connectionStatus] ?? connectionStatus}</Text>
+            </View>
+            {currentCadence != null && (
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Live cadence</Text>
+                <Text style={styles.rowValue}>{currentCadence} spm</Text>
+              </View>
+            )}
+            <Pressable style={styles.logoutButton} onPress={findDevice}>
+              <Text style={styles.logoutButtonText}>Find Device</Text>
+            </Pressable>
+          </View>
+        )}
       </View>
 
       <Pressable onPress={() => Linking.openURL(GETSONGBPM_URL)} style={styles.attribution}>
@@ -137,6 +172,7 @@ const styles = StyleSheet.create({
   cadenceOptionActive: { backgroundColor: colors.surface },
   cadenceOptionText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
   cadenceOptionTextActive: { color: colors.text },
+  garminStatus: { marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.border },
   attribution: { marginTop: 32, alignItems: 'center' },
   attributionText: { fontSize: 13, color: colors.textMuted },
   attributionLink: { color: colors.text, fontWeight: '600', textDecorationLine: 'underline' },

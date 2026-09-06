@@ -4,6 +4,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from './src/auth/AuthContext';
 import { SettingsProvider } from './src/settings/SettingsContext';
+import { LiveCadenceProvider } from './src/cadence/LiveCadenceContext';
 import AppNavigator from './src/navigation/AppNavigator';
 
 export default function App() {
@@ -12,8 +13,10 @@ export default function App() {
       <SafeAreaProvider>
         <AuthProvider>
           <SettingsProvider>
-            <StatusBar style="dark" />
-            <AppNavigator />
+            <LiveCadenceProvider>
+              <StatusBar style="dark" />
+              <AppNavigator />
+            </LiveCadenceProvider>
           </SettingsProvider>
         </AuthProvider>
       </SafeAreaProvider>

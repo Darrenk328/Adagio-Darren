@@ -1,0 +1,7 @@
+{
+  "name": "garmin-cadence",
+  "version": "0.1.0",
+  "description": "Local Expo module: reads live cadence from a paired Garmin watch running the Adagio Connect IQ app",
+  "main": "index.ts",
+  "license": "MIT"
+}
