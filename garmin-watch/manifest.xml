@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<!--
+  Adagio's Connect IQ Watch App — reads live running cadence and
+  transmits it to the Adagio iOS app over Bluetooth.
+
+  App id below is a locally-generated random identifier (via `uuidgen`),
+  distinct from the standalone garmin-cadence-prototype's id (this is a
+  fresh identity, signed with a fresh key, not an "update" of the
+  prototype) — it only needs to be unique on this machine for local
+  builds; it's not registered with Garmin until/unless this is submitted
+  to the Connect IQ Store. The iOS-side native module's IQApp uuid must
+  match this exact value (reformatted as a dashed NSUUID string) — see
+  mobile/modules/garmin-cadence/ios/GarminCadenceModule.swift.
+-->
+<iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="3">
+    <iq:application
+        id="61CF7009427E4C2C9E43020A19CE0E79"
+        type="watch-app"
+        name="@Strings.AppName"
+        entry="AdagioApp"
+        launcherIcon="@Drawables.LauncherIcon"
+        minApiLevel="3.2.0">
+        <iq:products>
+            <iq:product id="fr55"/>
+        </iq:products>
+        <iq:permissions>
+            <iq:uses-permission id="Fit"/>
+            <iq:uses-permission id="FitContributor"/>
+            <iq:uses-permission id="Communications"/>
+        </iq:permissions>
+        <iq:languages>
+            <iq:language>eng</iq:language>
+        </iq:languages>
+    </iq:application>
+</iq:manifest>

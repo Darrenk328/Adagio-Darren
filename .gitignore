@@ -30,6 +30,12 @@ backend/dist/
 backend/*.sqlite
 backend/data/
 
+# Garmin Connect IQ watch app (separate language/toolchain — see garmin-watch/README.md)
+garmin-watch/bin/
+# Developer signing key — losing this blocks future updates to the
+# published app. Not committed regardless.
+garmin-watch/keys/
+
 # Editors
 .vscode/
 .idea/
