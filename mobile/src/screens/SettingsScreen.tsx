@@ -9,7 +9,7 @@ const GETSONGBPM_URL = 'https://getsongbpm.com';
 
 export default function SettingsScreen() {
   const { accessToken, logout } = useAuth();
-  const { defaultTolerance, setDefaultTolerance } = useSettings();
+  const { defaultTolerance, setDefaultTolerance, cadenceSource, setCadenceSource } = useSettings();
   const [toleranceInput, setToleranceInput] = useState(String(defaultTolerance));
 
   const handleToleranceBlur = () => {
@@ -54,6 +54,32 @@ export default function SettingsScreen() {
           keyboardType="number-pad"
         />
         <Text style={styles.hint}>Used to pre-fill the tolerance field when setting up a workout.</Text>
+      </View>
+
+      <Text style={styles.sectionLabel}>Cadence source</Text>
+      <View style={styles.card}>
+        <View style={styles.cadenceToggle}>
+          <Pressable
+            style={[styles.cadenceOption, cadenceSource === 'none' && styles.cadenceOptionActive]}
+            onPress={() => setCadenceSource('none')}
+          >
+            <Text style={[styles.cadenceOptionText, cadenceSource === 'none' && styles.cadenceOptionTextActive]}>
+              None
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.cadenceOption, cadenceSource === 'garmin' && styles.cadenceOptionActive]}
+            onPress={() => setCadenceSource('garmin')}
+          >
+            <Text style={[styles.cadenceOptionText, cadenceSource === 'garmin' && styles.cadenceOptionTextActive]}>
+              Garmin Watch
+            </Text>
+          </Pressable>
+        </View>
+        <Text style={styles.hint}>
+          When set to Garmin Watch, live cadence from a paired watch drives in-workout voice nudges when your
+          pace drifts from the target.
+        </Text>
       </View>
 
       <Pressable onPress={() => Linking.openURL(GETSONGBPM_URL)} style={styles.attribution}>
@@ -106,6 +132,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   hint: { fontSize: 12, color: colors.textMuted, lineHeight: 17 },
+  cadenceToggle: { flexDirection: 'row', backgroundColor: colors.border, borderRadius: 8, padding: 3, marginBottom: 10 },
+  cadenceOption: { flex: 1, paddingVertical: 8, borderRadius: 6, alignItems: 'center' },
+  cadenceOptionActive: { backgroundColor: colors.surface },
+  cadenceOptionText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
+  cadenceOptionTextActive: { color: colors.text },
   attribution: { marginTop: 32, alignItems: 'center' },
   attributionText: { fontSize: 13, color: colors.textMuted },
   attributionLink: { color: colors.text, fontWeight: '600', textDecorationLine: 'underline' },
