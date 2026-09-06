@@ -70,6 +70,7 @@ export default function ResultsScreen({ route, navigation }: Props) {
         style={styles.list}
         data={matches}
         keyExtractor={(item) => item.id}
+        keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
           <Text style={styles.empty}>No matches found. Try widening the tolerance.</Text>
         }

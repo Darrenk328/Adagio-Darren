@@ -1,7 +1,9 @@
 import React from 'react';
+import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createBottomTabNavigator, BottomTabBar } from '@react-navigation/bottom-tabs';
 import { colors } from '../theme/colors';
+import WorkoutBanner from '../workout/WorkoutBanner';
 
 import HomeScreen from '../screens/HomeScreen';
 import WorkoutStack from './WorkoutStack';
@@ -35,6 +37,16 @@ export default function MainTabs() {
           <Ionicons name={focused ? TAB_ICON[route.name].active : TAB_ICON[route.name].inactive} size={size} color={color} />
         ),
       })}
+      // Renders the persistent "workout in progress" banner directly above
+      // the real tab bar (rather than as an absolutely-positioned overlay
+      // elsewhere) so it inherits the tab bar's own safe-area handling for
+      // free and never has to guess the tab bar's height.
+      tabBar={(props) => (
+        <View style={{ backgroundColor: colors.background }}>
+          <WorkoutBanner />
+          <BottomTabBar {...props} />
+        </View>
+      )}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Workout" component={WorkoutStack} />

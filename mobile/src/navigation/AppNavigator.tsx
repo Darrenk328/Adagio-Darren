@@ -3,6 +3,8 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { colors } from '../theme/colors';
 import { useAuth } from '../auth/AuthContext';
+import { WorkoutSessionProvider } from '../workout/WorkoutSessionContext';
+import { navigationRef } from './navigationRef';
 
 import LoginScreen from '../screens/LoginScreen';
 import MainTabs from './MainTabs';
@@ -32,7 +34,11 @@ export default function AppNavigator() {
     );
   }
 
-  return <NavigationContainer theme={navTheme}>{accessToken ? <MainTabs /> : <LoginScreen />}</NavigationContainer>;
+  return (
+    <NavigationContainer ref={navigationRef} theme={navTheme}>
+      <WorkoutSessionProvider>{accessToken ? <MainTabs /> : <LoginScreen />}</WorkoutSessionProvider>
+    </NavigationContainer>
+  );
 }
 
 const styles = StyleSheet.create({

@@ -71,9 +71,8 @@ export default function IntervalBuilder({ activity, unit, paceUnit, segments, on
   return (
     <View style={styles.container}>
       {/* A fixed (non-scrolling) sibling above the list, not a
-          ListHeaderComponent — kept from the earlier drag-and-drop layout
-          since it's a proven-reliable structure (see FlatList-swallows-
-          sibling-touches note in project memory). */}
+          ListHeaderComponent — proven-reliable structure (see FlatList-
+          swallows-sibling-touches note in project memory). */}
       <View style={styles.fixedHeader}>
         {header}
         <Text style={styles.label}>Presets</Text>

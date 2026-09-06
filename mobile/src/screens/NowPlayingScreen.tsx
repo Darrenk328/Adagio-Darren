@@ -2,10 +2,12 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { View, Text, Pressable, StyleSheet, Image, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useIsFocused } from '@react-navigation/native';
 import { colors } from '../theme/colors';
 import { formatDuration } from '../utils/duration';
 import { useAuth } from '../auth/AuthContext';
 import { useSettings } from '../settings/SettingsContext';
+import { useWorkoutSession } from '../workout/WorkoutSessionContext';
 import {
   startPlayback,
   pausePlayback,
@@ -26,6 +28,8 @@ export default function NowPlayingScreen({ route }: Props) {
   const { playlistId, playlistName, segments, unit } = route.params;
   const { accessToken } = useAuth();
   const { defaultTolerance } = useSettings();
+  const { setSession } = useWorkoutSession();
+  const isFocused = useIsFocused();
 
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>('checking');
   const [isPlaying, setIsPlaying] = useState(false);
@@ -49,6 +53,25 @@ export default function NowPlayingScreen({ route }: Props) {
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
+  // Publish a minimal "workout in progress" signal for the persistent
+  // banner shown on other tabs — only while there's actually something
+  // playing (not during the initial device check/error states, and not
+  // once all segments have finished) AND this screen itself isn't the one
+  // on screen (no point banner-ing your way back to where you already are).
+  // Cleared unconditionally on unmount so navigating back via the header
+  // always dismisses the banner, even before this effect re-runs.
+  useEffect(() => {
+    if (deviceStatus === 'ready' && !segmentsComplete && !isFocused) {
+      setSession({ playlistName, isPlaying, elapsedSec });
+    } else {
+      setSession(null);
+    }
+  }, [deviceStatus, segmentsComplete, isFocused, isPlaying, elapsedSec, playlistName, setSession]);
+
+  useEffect(() => {
+    return () => setSession(null);
+  }, [setSession]);
 
   const begin = useCallback(async () => {
     if (!accessToken) return;

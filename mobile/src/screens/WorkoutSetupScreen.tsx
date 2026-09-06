@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator } from 'react-native';
-import { ScrollView } from 'react-native-gesture-handler';
+import { View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import { parsePaceString, estimateCadenceFromPace, PaceUnit } from '../utils/paceToCadence';
@@ -172,10 +171,8 @@ export default function WorkoutSetupScreen({ route, navigation }: Props) {
   );
 
   if (workoutMode === 'intervals') {
-    // No outer ScrollView here on purpose: the segment list's drag-to-reorder
-    // gesture needs to own touch handling, and nesting it inside a plain
-    // scroll container causes them to fight over the gesture. IntervalBuilder
-    // is the single scrollable surface instead, with the shared header/start
+    // No outer ScrollView here on purpose: IntervalBuilder is the single
+    // scrollable surface (its own FlatList), with the shared header/start
     // button passed in so everything still scrolls together.
     return (
       <IntervalBuilder
