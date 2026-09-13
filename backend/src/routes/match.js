@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { matchTracksToCadence } from '../services/matching.js';
+import { lookupBpmForTracks } from '../services/bpmLookup.js';
 
 const router = Router();
 
@@ -10,29 +11,54 @@ const MIN_DESIRED_MATCHES = 8;
 const CASCADE_MULTIPLIERS = [1, 2, 3, 4];
 
 // body: { tracks: [{ id, title, artist, bpm }], cadence: number, tolerance: number }
-router.post('/', (req, res) => {
-  const { tracks, cadence, tolerance } = req.body;
+router.post('/', async (req, res, next) => {
+  try {
+    const { tracks, cadence, tolerance } = req.body;
 
-  if (!Array.isArray(tracks)) return res.status(400).json({ error: '"tracks" must be an array' });
-  if (typeof cadence !== 'number') return res.status(400).json({ error: '"cadence" must be a number' });
-  if (typeof tolerance !== 'number') return res.status(400).json({ error: '"tolerance" must be a number' });
+    // TEMP DIAGNOSTIC — tracing whether /match is even reached, and with
+    // what shape of data, while chasing "cannot load matching songs".
+    console.log(
+      `[match] request received: ${Array.isArray(tracks) ? tracks.length : typeof tracks} tracks, ` +
+        `cadence=${cadence}, tolerance=${tolerance}`,
+    );
 
-  let matches = [];
-  let usedTolerance = tolerance;
+    if (!Array.isArray(tracks)) return res.status(400).json({ error: '"tracks" must be an array' });
+    if (typeof cadence !== 'number') return res.status(400).json({ error: '"cadence" must be a number' });
+    if (typeof tolerance !== 'number') return res.status(400).json({ error: '"tolerance" must be a number' });
 
-  for (const multiplier of CASCADE_MULTIPLIERS) {
-    const candidateTolerance = tolerance * multiplier;
-    const attempt = matchTracksToCadence(tracks, cadence, candidateTolerance);
+    // Spotify tracks arrive already enriched (GET /playlists/:id/tracks
+    // does it there), but Apple Music tracks are fetched natively
+    // on-device (modules/apple-music) and never pass through that route —
+    // they'd otherwise arrive here with bpm always null and get filtered
+    // out of every match. Enrich here too so matching works regardless of
+    // source; lookupBpm's cache makes the already-enriched case cheap.
+    const needsBpm = tracks.some((t) => typeof t.bpm !== 'number');
+    const enrichedTracks = needsBpm ? await lookupBpmForTracks(tracks) : tracks;
 
-    // Anything outside the *originally requested* tolerance is only a match
-    // because we widened — tag it so the UI can show that distinction.
-    matches = attempt.map((m) => ({ ...m, matchTier: m.distance > tolerance ? 'widened' : 'exact' }));
-    usedTolerance = candidateTolerance;
+    let matches = [];
+    let usedTolerance = tolerance;
 
-    if (matches.length >= MIN_DESIRED_MATCHES) break;
+    for (const multiplier of CASCADE_MULTIPLIERS) {
+      const candidateTolerance = tolerance * multiplier;
+      const attempt = matchTracksToCadence(enrichedTracks, cadence, candidateTolerance);
+
+      // Anything outside the *originally requested* tolerance is only a match
+      // because we widened — tag it so the UI can show that distinction.
+      matches = attempt.map((m) => ({ ...m, matchTier: m.distance > tolerance ? 'widened' : 'exact' }));
+      usedTolerance = candidateTolerance;
+
+      if (matches.length >= MIN_DESIRED_MATCHES) break;
+    }
+
+    console.log(
+      `[match] result: ${matches.length} matches at tolerance ${usedTolerance} ` +
+        `(sample bpm values: ${enrichedTracks.slice(0, 5).map((t) => t.bpm)})`,
+    );
+    res.json({ matches, tolerance: usedTolerance });
+  } catch (err) {
+    console.error('[match] error:', err);
+    next(err);
   }
-
-  res.json({ matches, tolerance: usedTolerance });
 });
 
 export default router;

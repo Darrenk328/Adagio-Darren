@@ -15,8 +15,9 @@ const discovery = {
 };
 
 export default function LoginScreen() {
-  const { login, sessionExpiredMessage } = useAuth();
+  const { login, loginWithAppleMusic, sessionExpiredMessage } = useAuth();
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isConnectingAppleMusic, setIsConnectingAppleMusic] = useState(false);
 
   const [request, , promptAsync] = AuthSession.useAuthRequest(
     {
@@ -48,6 +49,21 @@ export default function LoginScreen() {
     }
   };
 
+  const handleAppleMusicLogin = async () => {
+    setIsConnectingAppleMusic(true);
+    try {
+      const result = await loginWithAppleMusic();
+      if (!result.success && result.error) {
+        Alert.alert('Apple Music', result.error);
+      }
+    } catch (err) {
+      console.error(err);
+      Alert.alert('Login failed', 'Something went wrong connecting to Apple Music.');
+    } finally {
+      setIsConnectingAppleMusic(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Adagio</Text>
@@ -68,6 +84,18 @@ export default function LoginScreen() {
           <ActivityIndicator color={colors.primaryText} />
         ) : (
           <Text style={styles.buttonText}>Connect with Spotify</Text>
+        )}
+      </Pressable>
+
+      <Pressable
+        style={[styles.button, styles.appleMusicButton]}
+        onPress={handleAppleMusicLogin}
+        disabled={isConnectingAppleMusic}
+      >
+        {isConnectingAppleMusic ? (
+          <ActivityIndicator color={colors.primaryText} />
+        ) : (
+          <Text style={styles.buttonText}>Connect with Apple Music</Text>
         )}
       </Pressable>
     </View>
@@ -104,5 +132,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonDisabled: { opacity: 0.5 },
+  appleMusicButton: { backgroundColor: '#FA2D48', marginTop: 12 },
   buttonText: { color: colors.primaryText, fontSize: 16, fontWeight: '600' },
 });

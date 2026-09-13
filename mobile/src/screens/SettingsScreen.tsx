@@ -24,7 +24,8 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function SettingsScreen() {
-  const { accessToken, logout } = useAuth();
+  const { musicSource, logout } = useAuth();
+  const serviceName = musicSource === 'appleMusic' ? 'Apple Music' : 'Spotify';
   const { defaultTolerance, setDefaultTolerance, cadenceSource, setCadenceSource } = useSettings();
   const { connectionStatus, deviceName, currentCadence, findDevice } = useLiveCadence();
   const [toleranceInput, setToleranceInput] = useState(String(defaultTolerance));
@@ -39,7 +40,7 @@ export default function SettingsScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert('Log out of Spotify?', undefined, [
+    Alert.alert(`Log out of ${serviceName}?`, undefined, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Log out', style: 'destructive', onPress: logout },
     ]);
@@ -49,11 +50,11 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <Text style={styles.header}>Settings</Text>
 
-      <Text style={styles.sectionLabel}>Spotify account</Text>
+      <Text style={styles.sectionLabel}>{serviceName} account</Text>
       <View style={styles.card}>
         <View style={styles.row}>
           <Text style={styles.rowLabel}>Status</Text>
-          <Text style={styles.rowValue}>{accessToken ? 'Connected' : 'Not connected'}</Text>
+          <Text style={styles.rowValue}>{musicSource ? 'Connected' : 'Not connected'}</Text>
         </View>
         <Pressable style={styles.logoutButton} onPress={handleLogout}>
           <Text style={styles.logoutButtonText}>Log out</Text>

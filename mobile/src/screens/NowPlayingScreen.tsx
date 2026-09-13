@@ -19,6 +19,7 @@ import {
   NoActiveDeviceError,
   MatchedTrack,
 } from '../api/client';
+import * as AppleMusic from '../../modules/apple-music';
 import type { WorkoutStackParamList } from '../navigation/WorkoutStack';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'NowPlaying'>;
@@ -26,8 +27,9 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'NowPlaying'>;
 type DeviceStatus = 'checking' | 'ready' | 'no-device' | 'error';
 
 export default function NowPlayingScreen({ route }: Props) {
-  const { playlistId, playlistName, segments, unit, targetCadence } = route.params;
+  const { playlistId, playlistName, musicSource, segments, unit, targetCadence } = route.params;
   const { accessToken } = useAuth();
+  const isAppleMusic = musicSource === 'appleMusic';
   const { defaultTolerance } = useSettings();
   const { setSession } = useWorkoutSession();
   const isFocused = useIsFocused();
@@ -87,13 +89,20 @@ export default function NowPlayingScreen({ route }: Props) {
   }, [setSession]);
 
   const begin = useCallback(async () => {
-    if (!accessToken) return;
+    if (!isAppleMusic && !accessToken) return;
     setDeviceStatus('checking');
     try {
-      await startPlayback(
-        accessToken,
-        queue.map((t) => t.id),
-      );
+      if (isAppleMusic) {
+        // No "no active device" concept for Apple Music — MusicKit plays
+        // right here on this device, unlike Spotify Connect controlling
+        // a separate remote device.
+        await AppleMusic.play(queue.map((t) => t.id));
+      } else {
+        await startPlayback(
+          accessToken!,
+          queue.map((t) => t.id),
+        );
+      }
       setDeviceStatus('ready');
       setIsPlaying(true);
     } catch (err) {
@@ -104,7 +113,7 @@ export default function NowPlayingScreen({ route }: Props) {
         setDeviceStatus('error');
       }
     }
-  }, [accessToken, queue]);
+  }, [accessToken, isAppleMusic, queue]);
 
   useEffect(() => {
     begin();
@@ -154,12 +163,15 @@ export default function NowPlayingScreen({ route }: Props) {
   // mid-song, which we accept.
   const transitionToSegment = useCallback(
     async (index: number) => {
-      if (!accessToken || !segments) return;
+      if (!isAppleMusic && !accessToken) return;
+      if (!segments) return;
       const target = segments[index];
       setIsSwitchingSegment(true);
       setTransitionNotice(null);
       try {
-        const tracks = await fetchPlaylistTracks(accessToken, playlistId);
+        const tracks = isAppleMusic
+          ? await AppleMusic.fetchPlaylistTracks(playlistId)
+          : await fetchPlaylistTracks(accessToken!, playlistId);
         const result = await matchTracks(tracks, target.target, defaultTolerance);
 
         if (result.matches.length === 0) {
@@ -169,14 +181,20 @@ export default function NowPlayingScreen({ route }: Props) {
 
         setQueue(result.matches);
         setCurrentTrackIndex(0);
-        await startPlayback(
-          accessToken,
-          result.matches.map((t) => t.id),
-        );
-        // If the user paused while this was in flight, honor that instead
-        // of leaving the new queue playing out from under them.
-        if (!isPlayingRef.current) {
-          await pausePlayback(accessToken);
+
+        if (isAppleMusic) {
+          await AppleMusic.play(result.matches.map((t) => t.id));
+          if (!isPlayingRef.current) AppleMusic.pause();
+        } else {
+          await startPlayback(
+            accessToken!,
+            result.matches.map((t) => t.id),
+          );
+          // If the user paused while this was in flight, honor that
+          // instead of leaving the new queue playing out from under them.
+          if (!isPlayingRef.current) {
+            await pausePlayback(accessToken!);
+          }
         }
       } catch (err) {
         if (err instanceof NoActiveDeviceError) {
@@ -189,7 +207,7 @@ export default function NowPlayingScreen({ route }: Props) {
         setIsSwitchingSegment(false);
       }
     },
-    [accessToken, playlistId, segments, defaultTolerance],
+    [accessToken, isAppleMusic, playlistId, segments, defaultTolerance],
   );
 
   // When segmentIndex advances, load that segment's duration into the
@@ -204,14 +222,17 @@ export default function NowPlayingScreen({ route }: Props) {
   }, [segmentIndex, segments, transitionToSegment]);
 
   const togglePause = async () => {
-    if (!accessToken || isBusy) return;
+    if (!isAppleMusic && !accessToken) return;
+    if (isBusy) return;
     setIsBusy(true);
     try {
       if (isPlaying) {
-        await pausePlayback(accessToken);
+        if (isAppleMusic) AppleMusic.pause();
+        else await pausePlayback(accessToken!);
         setIsPlaying(false);
       } else {
-        await resumePlayback(accessToken);
+        if (isAppleMusic) await AppleMusic.resume();
+        else await resumePlayback(accessToken!);
         setIsPlaying(true);
       }
     } catch (err) {
@@ -226,10 +247,12 @@ export default function NowPlayingScreen({ route }: Props) {
   };
 
   const handleSkip = async () => {
-    if (!accessToken || isBusy) return;
+    if (!isAppleMusic && !accessToken) return;
+    if (isBusy) return;
     setIsBusy(true);
     try {
-      await skipToNextTrack(accessToken);
+      if (isAppleMusic) await AppleMusic.skipToNext();
+      else await skipToNextTrack(accessToken!);
       setCurrentTrackIndex((i) => (i + 1 < queue.length ? i + 1 : 0));
     } catch (err) {
       if (err instanceof NoActiveDeviceError) {

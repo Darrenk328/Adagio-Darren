@@ -22,7 +22,8 @@ const navTheme = {
 };
 
 export default function AppNavigator() {
-  const { accessToken, isLoading } = useAuth();
+  const { accessToken, musicSource, isLoading } = useAuth();
+  const isLoggedIn = Boolean(accessToken) || musicSource === 'appleMusic';
 
   // Restoring a stored session on launch — avoid flashing the Login screen
   // before we know whether a valid refresh token is already saved.
@@ -36,7 +37,7 @@ export default function AppNavigator() {
 
   return (
     <NavigationContainer ref={navigationRef} theme={navTheme}>
-      <WorkoutSessionProvider>{accessToken ? <MainTabs /> : <LoginScreen />}</WorkoutSessionProvider>
+      <WorkoutSessionProvider>{isLoggedIn ? <MainTabs /> : <LoginScreen />}</WorkoutSessionProvider>
     </NavigationContainer>
   );
 }

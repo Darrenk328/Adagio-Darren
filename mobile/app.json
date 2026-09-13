@@ -10,8 +10,11 @@
       "backgroundColor": "#FFFFFF"
     },
     "ios": {
-      "bundleIdentifier": "com.adagio.app",
-      "supportsTablet": false
+      "bundleIdentifier": "com.darrenkapturski.Adagio",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSAppleMusicUsageDescription": "Adagio uses Apple Music to match songs to your running cadence."
+      }
     },
     "android": {
       "package": "com.adagio.app"

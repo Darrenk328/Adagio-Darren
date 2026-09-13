@@ -3,6 +3,7 @@ import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Image }
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import { fetchPlaylistTracks, matchTracks, MatchedTrack } from '../api/client';
+import * as AppleMusic from '../../modules/apple-music';
 import { useAuth } from '../auth/AuthContext';
 import type { WorkoutStackParamList } from '../navigation/WorkoutStack';
 
@@ -14,7 +15,7 @@ const TIER_LABEL: Record<MatchedTrack['matchTier'], string> = {
 };
 
 export default function ResultsScreen({ route, navigation }: Props) {
-  const { playlistId, playlistName, cadence, tolerance, unit } = route.params;
+  const { playlistId, playlistName, musicSource, cadence, tolerance, unit } = route.params;
   const { accessToken } = useAuth();
   const [matches, setMatches] = useState<MatchedTrack[]>([]);
   const [usedTolerance, setUsedTolerance] = useState(tolerance);
@@ -22,20 +23,30 @@ export default function ResultsScreen({ route, navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!accessToken) return;
+    if (musicSource === 'spotify' && !accessToken) return;
     (async () => {
       try {
-        const tracks = await fetchPlaylistTracks(accessToken, playlistId);
+        const tracks =
+          musicSource === 'appleMusic'
+            ? await AppleMusic.fetchPlaylistTracks(playlistId)
+            : await fetchPlaylistTracks(accessToken!, playlistId);
         const result = await matchTracks(tracks, cadence, tolerance);
         setMatches(result.matches);
         setUsedTolerance(result.tolerance);
       } catch (err) {
-        setError('Could not load matching songs.');
+        // TEMP DIAGNOSTIC — this catch was swallowing the real error with
+        // no logging, making an Apple Music-side failure indistinguishable
+        // from a backend one. console.error surfaces in Metro's terminal;
+        // the message is also shown on-screen for now so it's visible
+        // even without a Metro console open.
+        console.error('[ResultsScreen] match failed:', err);
+        const message = err instanceof Error ? err.message : String(err);
+        setError(`Could not load matching songs.\n\n${message}`);
       } finally {
         setIsLoading(false);
       }
     })();
-  }, [accessToken, playlistId, cadence, tolerance]);
+  }, [accessToken, musicSource, playlistId, cadence, tolerance]);
 
   if (isLoading) {
     return (
@@ -100,6 +111,7 @@ export default function ResultsScreen({ route, navigation }: Props) {
                   navigation.navigate('NowPlaying', {
                     playlistId,
                     playlistName,
+                    musicSource,
                     queue: matches,
                     unit,
                     targetCadence: cadence,

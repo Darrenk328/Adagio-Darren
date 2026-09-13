@@ -6,6 +6,7 @@ import { parsePaceString, estimateCadenceFromPace, PaceUnit } from '../utils/pac
 import { useSettings } from '../settings/SettingsContext';
 import { useAuth } from '../auth/AuthContext';
 import { fetchPlaylistTracks, matchTracks } from '../api/client';
+import * as AppleMusic from '../../modules/apple-music';
 import IntervalBuilder from '../components/IntervalBuilder';
 import type { Segment } from '../types/workout';
 import type { WorkoutStackParamList } from '../navigation/WorkoutStack';
@@ -20,7 +21,7 @@ const UNIT: Record<Activity, string> = { running: 'SPM', cycling: 'RPM' };
 const DEFAULT_CADENCE: Record<Activity, string> = { running: '170', cycling: '90' };
 
 export default function WorkoutSetupScreen({ route, navigation }: Props) {
-  const { playlistId, playlistName } = route.params;
+  const { playlistId, playlistName, musicSource } = route.params;
   const { defaultTolerance } = useSettings();
   const { accessToken } = useAuth();
 
@@ -76,6 +77,7 @@ export default function WorkoutSetupScreen({ route, navigation }: Props) {
     navigation.navigate('Results', {
       playlistId,
       playlistName,
+      musicSource,
       cadence: cadenceNum,
       tolerance: toleranceNum || defaultTolerance,
       unit,
@@ -87,14 +89,17 @@ export default function WorkoutSetupScreen({ route, navigation }: Props) {
       Alert.alert('Add at least one segment', 'Build your interval workout before starting.');
       return;
     }
-    if (!accessToken) return;
+    if (musicSource === 'spotify' && !accessToken) return;
 
     setIsStartingIntervals(true);
     try {
       // Matches the first segment's target to build the initial queue.
       // Re-matching + swapping the queue as later segments start is a
       // follow-up — for now the same queue plays through the whole workout.
-      const tracks = await fetchPlaylistTracks(accessToken, playlistId);
+      const tracks =
+        musicSource === 'appleMusic'
+          ? await AppleMusic.fetchPlaylistTracks(playlistId)
+          : await fetchPlaylistTracks(accessToken!, playlistId);
       const result = await matchTracks(tracks, segments[0].target, defaultTolerance);
 
       if (result.matches.length === 0) {
@@ -102,7 +107,14 @@ export default function WorkoutSetupScreen({ route, navigation }: Props) {
         return;
       }
 
-      navigation.navigate('NowPlaying', { playlistId, playlistName, queue: result.matches, segments, unit });
+      navigation.navigate('NowPlaying', {
+        playlistId,
+        playlistName,
+        musicSource,
+        queue: result.matches,
+        segments,
+        unit,
+      });
     } catch (err) {
       Alert.alert('Something went wrong', 'Could not load matching songs for this workout.');
     } finally {

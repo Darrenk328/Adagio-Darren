@@ -1,0 +1,7 @@
+{
+  "name": "apple-music",
+  "version": "0.1.0",
+  "description": "Local Expo module: MusicKit authorization plus library playlist/track fetching, the Apple Music counterpart to the backend-mediated Spotify flow in src/api/client.ts",
+  "main": "index.ts",
+  "license": "MIT"
+}
