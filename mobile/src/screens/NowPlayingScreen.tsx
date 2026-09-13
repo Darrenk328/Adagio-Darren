@@ -9,6 +9,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useSettings } from '../settings/SettingsContext';
 import { useWorkoutSession } from '../workout/WorkoutSessionContext';
 import { useCadenceNudges } from '../cadence/useCadenceNudges';
+import { useLiveCadence } from '../cadence/LiveCadenceContext';
 import {
   startPlayback,
   pausePlayback,
@@ -30,8 +31,9 @@ export default function NowPlayingScreen({ route }: Props) {
   const { playlistId, playlistName, musicSource, segments, unit, targetCadence } = route.params;
   const { accessToken } = useAuth();
   const isAppleMusic = musicSource === 'appleMusic';
-  const { defaultTolerance } = useSettings();
+  const { defaultTolerance, cadenceSource } = useSettings();
   const { setSession } = useWorkoutSession();
+  const { startTracking, stopTracking } = useLiveCadence();
   const isFocused = useIsFocused();
 
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>('checking');
@@ -120,6 +122,21 @@ export default function NowPlayingScreen({ route }: Props) {
     // Only run once on mount — retries go through the explicit "Try again" button.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // HealthKit's HKWorkoutSession is workout-scoped (unlike Garmin's
+  // ambient BLE connection, which the Settings screen manages on its
+  // own) — start it exactly when this workout starts, stop it exactly
+  // when this screen goes away, regardless of how that happens (finished
+  // segments, navigating back, killing the app mid-run). No-ops when
+  // cadenceSource isn't 'healthkit' — see LiveCadenceContext.
+  useEffect(() => {
+    if (cadenceSource !== 'healthkit') return;
+    startTracking().catch((err) => console.error('[NowPlayingScreen] startTracking failed:', err));
+    return () => {
+      stopTracking().catch((err) => console.error('[NowPlayingScreen] stopTracking failed:', err));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cadenceSource]);
 
   // Single ticking clock driving both the overall elapsed counter and (if
   // this is an interval workout) the current segment's countdown. Only runs

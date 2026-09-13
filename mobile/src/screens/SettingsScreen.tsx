@@ -21,13 +21,18 @@ const STATUS_LABEL: Record<string, string> = {
   invalidDevice: 'Invalid device',
   noDeviceReturned: "Couldn't find a device — try again",
   unknown: 'Unknown status',
+  // healthkit-cadence statuses (its 'tracking' arrives here already
+  // normalized to 'ready' by LiveCadenceContext, so it reuses that label)
+  stopped: 'Not tracking',
+  error: 'Something went wrong',
+  unavailable: 'Requires iOS 26 or later',
 };
 
 export default function SettingsScreen() {
   const { musicSource, logout } = useAuth();
   const serviceName = musicSource === 'appleMusic' ? 'Apple Music' : 'Spotify';
   const { defaultTolerance, setDefaultTolerance, cadenceSource, setCadenceSource } = useSettings();
-  const { connectionStatus, deviceName, currentCadence, findDevice } = useLiveCadence();
+  const { connectionStatus, deviceName, currentCadence, findDevice, requestHealthAccess } = useLiveCadence();
   const [toleranceInput, setToleranceInput] = useState(String(defaultTolerance));
 
   const handleToleranceBlur = () => {
@@ -36,6 +41,18 @@ export default function SettingsScreen() {
       setDefaultTolerance(value);
     } else {
       setToleranceInput(String(defaultTolerance)); // reset to last valid value
+    }
+  };
+
+  const handleRequestHealthAccess = async () => {
+    try {
+      await requestHealthAccess();
+    } catch (err) {
+      // HealthKit never reveals whether READ access was actually granted
+      // (a denied read type just silently returns no data later) — this
+      // failing means the prompt itself couldn't be shown (e.g. HealthKit
+      // unavailable on this device), which is worth surfacing directly.
+      Alert.alert('Could not request HealthKit access', err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -93,10 +110,23 @@ export default function SettingsScreen() {
               Garmin Watch
             </Text>
           </Pressable>
+          <Pressable
+            style={[styles.cadenceOption, cadenceSource === 'healthkit' && styles.cadenceOptionActive]}
+            onPress={() => setCadenceSource('healthkit')}
+          >
+            <Text
+              style={[styles.cadenceOptionText, cadenceSource === 'healthkit' && styles.cadenceOptionTextActive]}
+            >
+              iPhone (HealthKit)
+            </Text>
+          </Pressable>
         </View>
         <Text style={styles.hint}>
-          When set to Garmin Watch, live cadence from a paired watch drives in-workout voice nudges when your
-          pace drifts from the target.
+          {cadenceSource === 'healthkit'
+            ? // Deliberately not calling this "Apple Watch" — it's cadence estimated
+              // from the iPhone's own sensors via HealthKit, not real Watch telemetry.
+              'Estimates your cadence from the iPhone’s own motion sensors during a workout. Requires iOS 26+ and a granted HealthKit permission below.'
+            : 'When set to Garmin Watch, live cadence from a paired watch drives in-workout voice nudges when your pace drifts from the target.'}
         </Text>
 
         {cadenceSource === 'garmin' && (
@@ -114,6 +144,28 @@ export default function SettingsScreen() {
             <Pressable style={styles.logoutButton} onPress={findDevice}>
               <Text style={styles.logoutButtonText}>Find Device</Text>
             </Pressable>
+          </View>
+        )}
+
+        {cadenceSource === 'healthkit' && (
+          <View style={styles.garminStatus}>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Status</Text>
+              <Text style={styles.rowValue}>{STATUS_LABEL[connectionStatus] ?? connectionStatus}</Text>
+            </View>
+            {currentCadence != null && (
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Live cadence</Text>
+                <Text style={styles.rowValue}>{currentCadence} spm</Text>
+              </View>
+            )}
+            <Pressable style={styles.logoutButton} onPress={handleRequestHealthAccess}>
+              <Text style={styles.logoutButtonText}>Request HealthKit Access</Text>
+            </Pressable>
+            <Text style={styles.hint}>
+              Tracking itself starts automatically when a workout begins — this button just grants the
+              permission ahead of time.
+            </Text>
           </View>
         )}
       </View>

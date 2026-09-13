@@ -1,0 +1,41 @@
+import { requireNativeModule, EventEmitter, type Subscription } from 'expo-modules-core';
+
+// Thin wrapper, matching modules/garmin-cadence/index.ts's style. See
+// HealthKitCadenceModule.swift's doc comment for the important caveat:
+// this is cadence ESTIMATED from the iPhone's own sensors via an
+// HKWorkoutSession, not genuine Apple Watch telemetry.
+
+export type TrackingStatus = 'idle' | 'tracking' | 'stopped' | 'error' | 'unavailable';
+
+export type StatusEvent = { status: TrackingStatus; error?: string };
+export type CadenceEvent = { cadence: number };
+
+const nativeModule = requireNativeModule('HealthKitCadenceModule');
+const emitter = new EventEmitter(nativeModule);
+
+export function isHealthDataAvailable(): boolean {
+  return nativeModule.isHealthDataAvailable();
+}
+
+/** Shows the system HealthKit permission prompt. Read-grant status is never revealed by the OS. */
+export async function requestAuthorization(): Promise<void> {
+  return nativeModule.requestAuthorization();
+}
+
+/** Starts an iPhone-owned running workout session and begins estimating cadence from it. */
+export async function start(): Promise<void> {
+  return nativeModule.start();
+}
+
+/** Ends the workout session. Safe to call when not tracking. */
+export async function stop(): Promise<void> {
+  return nativeModule.stop();
+}
+
+export function addStatusListener(listener: (event: StatusEvent) => void): Subscription {
+  return emitter.addListener('onStatusChanged', listener);
+}
+
+export function addCadenceListener(listener: (event: CadenceEvent) => void): Subscription {
+  return emitter.addListener('onCadenceReceived', listener);
+}

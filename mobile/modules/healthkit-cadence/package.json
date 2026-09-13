@@ -1,0 +1,7 @@
+{
+  "name": "healthkit-cadence",
+  "version": "0.1.0",
+  "description": "Local Expo module: live running cadence estimated from the iPhone's own sensors via an HKWorkoutSession, as an alternative to modules/garmin-cadence. NOT genuine Apple Watch telemetry — see the module's own doc comment.",
+  "main": "index.ts",
+  "license": "MIT"
+}

@@ -3,9 +3,16 @@ import * as SecureStore from 'expo-secure-store';
 
 // The only thing any live-cadence consumer (voice nudges now, potentially
 // the matching engine later) should ever branch on. Adding a future
-// source (e.g. phone-accelerometer-based) means adding a case here and to
-// LiveCadenceContext's internals — no existing consumer changes.
-export type CadenceSource = 'none' | 'garmin';
+// source means adding a case here and to LiveCadenceContext's internals —
+// no existing consumer changes.
+//
+// 'healthkit' is cadence ESTIMATED from the iPhone's own sensors via an
+// HKWorkoutSession (modules/healthkit-cadence) — NOT genuine Apple Watch
+// telemetry, unlike 'garmin' which really does read a paired watch. Named
+// for the mechanism rather than "appleWatch" so it doesn't get mistaken
+// later for real Watch-measured data, which needs a watchOS companion
+// app this project doesn't have.
+export type CadenceSource = 'none' | 'garmin' | 'healthkit';
 
 type SettingsState = {
   defaultTolerance: number;
@@ -23,7 +30,7 @@ const FALLBACK_TOLERANCE = 5;
 const FALLBACK_CADENCE_SOURCE: CadenceSource = 'none';
 
 function isCadenceSource(value: string): value is CadenceSource {
-  return value === 'none' || value === 'garmin';
+  return value === 'none' || value === 'garmin' || value === 'healthkit';
 }
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
