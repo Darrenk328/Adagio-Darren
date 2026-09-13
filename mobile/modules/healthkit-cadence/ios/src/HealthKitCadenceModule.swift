@@ -20,59 +20,46 @@ import HealthKit
 /// reads the workout's cumulative stepCount as HealthKit collects it and
 /// differentiates over a rolling window to get steps per minute.
 ///
-/// `HKWorkoutSession.init(healthStore:configuration:)` for an iPhone-owned
-/// (non-Watch) session is iOS 26+ only — confirmed from the reference
-/// implementation's own doc comment, not assumed. Same availability-guard
-/// pattern as modules/apple-music: every function checks it and returns/
-/// throws a clean "unavailable" rather than trapping at the first call.
+/// `HKWorkoutSession`/`HKWorkoutSessionState` need iOS 17+ and
+/// `HKLiveWorkoutBuilder` needs iOS 26+ for an iPhone-owned (non-Watch)
+/// session — confirmed by real compiler errors, not assumed. `session`/
+/// `builder`/`delegateHandler` below are stored as `Any?` rather than
+/// their real types for the same class-layout reason modules/apple-music's
+/// trackCache is `[String: Any]`: a stored property's type is part of
+/// this class's memory layout, which has to compile for every deployment
+/// target this app supports (13.4) — `@available` on the property alone
+/// isn't enough. Every function checks #available and casts with `as?`
+/// inside that guard.
 public class HealthKitCadenceModule: Module {
 
     private let healthStore = HKHealthStore()
-    private let delegateHandler = HealthKitCadenceDelegateHandler()
 
-    private var session: HKWorkoutSession?
-    private var builder: HKLiveWorkoutBuilder?
+    private var session: Any?
+    private var builder: Any?
+    private var delegateHandler: Any?
 
     // Rolling (timestamp, cumulative steps) samples — cadence is the
     // slope of this series, so at least two points spanning enough time
-    // are needed before publishing anything.
+    // are needed before publishing anything. None of these types need
+    // the iOS 17/26 gating above.
     private var stepSamples: [(date: Date, steps: Double)] = []
     private let windowDuration: TimeInterval = 10
     private var smoothedSPM: Double?
     private let emaAlpha: Double = 0.3
 
-    private let stepType = HKQuantityType(.stepCount)
+    // HKQuantityType(.stepCount) (the identifier-enum-literal init) needs
+    // iOS 15+ — this class isn't @available-gated as a whole (Expo
+    // instantiates it unconditionally), so it needs the older
+    // quantityType(forIdentifier:) form, which has worked since iOS 8.
+    // Force-unwrap is safe: .stepCount and .distanceWalkingRunning are
+    // both real, permanent identifiers that always resolve.
+    private let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+    private let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!
     private var typesToRead: Set<HKObjectType> {
-        [stepType, HKQuantityType(.distanceWalkingRunning), HKObjectType.workoutType()]
+        [stepType, distanceType, HKObjectType.workoutType()]
     }
     private var typesToShare: Set<HKSampleType> {
-        [HKObjectType.workoutType(), stepType, HKQuantityType(.distanceWalkingRunning)]
-    }
-
-    public required init(appContext: AppContext) {
-        super.init(appContext: appContext)
-
-        delegateHandler.onStateChanged = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .running:
-                self.sendEvent("onStatusChanged", ["status": "tracking"])
-            case .ended, .stopped:
-                self.sendEvent("onStatusChanged", ["status": "stopped"])
-                self.teardown()
-            default:
-                break
-            }
-        }
-
-        delegateHandler.onError = { [weak self] error in
-            self?.sendEvent("onStatusChanged", ["status": "error", "error": error.localizedDescription])
-            self?.teardown()
-        }
-
-        delegateHandler.onStepStatistics = { [weak self] statistics in
-            self?.ingestStepStatistics(statistics)
-        }
+        [HKObjectType.workoutType(), stepType, distanceType]
     }
 
     public func definition() -> ModuleDefinition {
@@ -90,6 +77,12 @@ public class HealthKitCadenceModule: Module {
         // this resolving successfully means the prompt was shown and
         // share (write) access exists, not a guarantee readings follow.
         AsyncFunction("requestAuthorization") { () -> Void in
+            // The async requestAuthorization(toShare:read:) overload needs
+            // iOS 15+ — moot in practice since start() already requires
+            // iOS 26, but this class isn't @available-gated as a whole
+            // (Expo instantiates it unconditionally), so the 13.4
+            // deployment target still needs this guard to compile.
+            guard #available(iOS 15.0, *) else { throw HealthKitVersionUnavailableError() }
             guard HKHealthStore.isHealthDataAvailable() else {
                 throw HealthUnavailableError()
             }
@@ -104,6 +97,27 @@ public class HealthKitCadenceModule: Module {
             guard HKHealthStore.isHealthDataAvailable() else { throw HealthUnavailableError() }
             guard self.session == nil else { return }
 
+            let handler = HealthKitCadenceDelegateHandler()
+            handler.onStateChanged = { [weak self] state in
+                guard let self else { return }
+                switch state {
+                case .running:
+                    self.sendEvent("onStatusChanged", ["status": "tracking"])
+                case .ended, .stopped:
+                    self.sendEvent("onStatusChanged", ["status": "stopped"])
+                    self.teardown()
+                default:
+                    break
+                }
+            }
+            handler.onError = { [weak self] error in
+                self?.sendEvent("onStatusChanged", ["status": "error", "error": error.localizedDescription])
+                self?.teardown()
+            }
+            handler.onStepStatistics = { [weak self] statistics in
+                self?.ingestStepStatistics(statistics)
+            }
+
             let configuration = HKWorkoutConfiguration()
             configuration.activityType = .running
             configuration.locationType = .outdoor
@@ -116,11 +130,12 @@ public class HealthKitCadenceModule: Module {
                     workoutConfiguration: configuration
                 )
 
-                session.delegate = self.delegateHandler
-                builder.delegate = self.delegateHandler
+                session.delegate = handler
+                builder.delegate = handler
 
                 self.session = session
                 self.builder = builder
+                self.delegateHandler = handler
                 self.resetDerivationState()
 
                 let startDate = Date()
@@ -134,7 +149,9 @@ public class HealthKitCadenceModule: Module {
 
         AsyncFunction("stop") { () -> Void in
             guard #available(iOS 26.0, *) else { return }
-            guard let session = self.session, let builder = self.builder else { return }
+            guard let session = self.session as? HKWorkoutSession,
+                  let builder = self.builder as? HKLiveWorkoutBuilder
+            else { return }
 
             session.end()
             do {
@@ -149,10 +166,13 @@ public class HealthKitCadenceModule: Module {
     }
 
     private func teardown() {
-        session?.delegate = nil
-        builder?.delegate = nil
+        if #available(iOS 26.0, *) {
+            (session as? HKWorkoutSession)?.delegate = nil
+            (builder as? HKLiveWorkoutBuilder)?.delegate = nil
+        }
         session = nil
         builder = nil
+        delegateHandler = nil
         resetDerivationState()
     }
 
