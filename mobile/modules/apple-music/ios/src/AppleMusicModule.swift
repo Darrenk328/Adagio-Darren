@@ -44,6 +44,14 @@ public class AppleMusicModule: Module {
     // `as? MusicKit.Track` at each iOS-16-gated read/write site instead.
     private var trackCache: [String: Any] = [:]
 
+    // Artwork bytes fetched via MusicDataRequest, keyed by the "musicKit://"
+    // URL string itself — many tracks share one album's artwork, so this
+    // avoids re-fetching identical bytes per track. See fetchArtworkDataURI.
+    // An actor, not a plain dictionary: serializeAll fetches artwork for
+    // every item concurrently via withTaskGroup, and a plain Dictionary
+    // isn't safe to mutate from multiple concurrent tasks at once.
+    private let artworkCache = ArtworkCache()
+
     public func definition() -> ModuleDefinition {
         Name("AppleMusicModule")
 
@@ -71,7 +79,7 @@ public class AppleMusicModule: Module {
             var request = MusicLibraryRequest<Playlist>()
             request.limit = limit ?? 50
             let response = try await request.response()
-            return response.items.map(Self.serialize)
+            return await self.serializeAll(Array(response.items), using: self.serialize)
         }
 
         // Returns a playlist's tracks, shaped like src/api/client.ts's
@@ -91,7 +99,7 @@ public class AppleMusicModule: Module {
             let detailed = try await playlist.with(.tracks)
             guard let tracks = detailed.tracks else { return [] }
             for track in tracks { self.trackCache[track.id.rawValue] = track }
-            return tracks.map(Self.serialize)
+            return await self.serializeAll(Array(tracks), using: self.serialize)
         }
 
         // Playback: unlike Spotify Connect (a REST API controlling a
@@ -144,19 +152,11 @@ public class AppleMusicModule: Module {
     }
 
     @available(iOS 16.0, *)
-    private static func serialize(_ playlist: Playlist) -> [String: Any?] {
+    private func serialize(_ playlist: Playlist) async -> [String: Any?] {
         [
             "id": playlist.id.rawValue,
             "name": playlist.name,
-            // Playlist.artwork.url(...) returns a "musicKit://" scheme
-            // URL, not a real HTTP(S) one — it only resolves through
-            // MusicKit's own rendering pipeline (SwiftUI's ArtworkImage),
-            // not a plain URLSession/RN Image fetch. Passing it through
-            // crashed React Native's image loader ("No suitable image
-            // URL loader found for musicKit://..."). Left nil until
-            // there's a native fetch (MusicDataRequest) to turn it into
-            // real bytes — the UI already falls back to a placeholder box.
-            "imageUrl": nil,
+            "imageUrl": await fetchArtworkDataURI(playlist.artwork),
             // entries is only populated once .with(.tracks) has been
             // called on this specific instance — nil here for a plain
             // library-request result, matching fetchPlaylists' contract
@@ -166,7 +166,7 @@ public class AppleMusicModule: Module {
     }
 
     @available(iOS 16.0, *)
-    private static func serialize(_ track: MusicKit.Track) -> [String: Any?] {
+    private func serialize(_ track: MusicKit.Track) async -> [String: Any?] {
         [
             "id": track.id.rawValue,
             "title": track.title,
@@ -176,12 +176,80 @@ public class AppleMusicModule: Module {
             // load (only available on Song, not the Track enum) — left
             // nil rather than faked.
             "artistId": nil,
-            // Same "musicKit://" scheme issue as Playlist.artwork above —
-            // not a real HTTP(S) URL, left nil rather than crashing RN's
-            // image loader.
-            "albumArtUrl": nil,
+            "albumArtUrl": await fetchArtworkDataURI(track.artwork),
             "bpm": nil,
         ]
+    }
+
+    // Playlist.artwork.url(...) / Track.artwork.url(...) return
+    // "musicKit://" scheme URLs for library items, not real HTTP(S) ones
+    // — they only resolve through MusicKit's own rendering pipeline
+    // (SwiftUI's ArtworkImage), not a plain URLSession/RN Image fetch.
+    // Passing one through crashed React Native's image loader ("No
+    // suitable image URL loader found for musicKit://..."), which is why
+    // this returned nil for a while. The actual fix, per Apple's own
+    // MusicKit docs: MusicDataRequest can fetch the real bytes behind
+    // these URLs. Returned as a "data:" URI, which RN's Image component
+    // renders natively with no custom loader needed.
+    //
+    // Cached by URL string — many tracks share one album's artwork, so
+    // this avoids redundant fetches within a single playlist/session.
+    @available(iOS 16.0, *)
+    private func fetchArtworkDataURI(_ artwork: Artwork?, size: Int = 100) async -> String? {
+        guard let url = artwork?.url(width: size, height: size) else { return nil }
+        let key = url.absoluteString
+        if let cached = await artworkCache.get(key) { return cached }
+
+        do {
+            let request = MusicDataRequest(urlRequest: URLRequest(url: url))
+            let response = try await request.response()
+            // MusicDataRequest doesn't report a MIME type — artwork.url(...)
+            // has consistently returned JPEG data in testing, which is
+            // what's assumed here.
+            let uri = "data:image/jpeg;base64,\(response.data.base64EncodedString())"
+            await artworkCache.set(key, uri)
+            return uri
+        } catch {
+            await artworkCache.set(key, nil) // cache the failure too — don't retry every time
+            return nil
+        }
+    }
+
+    // Runs `transform` over every item concurrently, preserving input
+    // order in the result — playlists/tracks can number in the dozens to
+    // low hundreds, and fetching artwork sequentially (one MusicDataRequest
+    // await at a time) would make a big playlist noticeably slow to load.
+    @available(iOS 16.0, *)
+    private func serializeAll<T>(
+        _ items: [T],
+        using transform: @escaping (T) async -> [String: Any?]
+    ) async -> [[String: Any?]] {
+        await withTaskGroup(of: (Int, [String: Any?]).self) { group in
+            for (index, item) in items.enumerated() {
+                group.addTask { (index, await transform(item)) }
+            }
+            var results = [[String: Any?]](repeating: [:], count: items.count)
+            for await (index, value) in group {
+                results[index] = value
+            }
+            return results
+        }
+    }
+}
+
+// Safe for concurrent access from serializeAll's withTaskGroup child tasks
+// — a plain Dictionary isn't. `String?` values (not just `String`) so a
+// failed lookup can be cached as a real "known failure" distinct from
+// "never tried"; get()'s `String??` return reflects that same distinction.
+actor ArtworkCache {
+    private var storage: [String: String?] = [:]
+
+    func get(_ key: String) -> String?? {
+        storage[key]
+    }
+
+    func set(_ key: String, _ value: String?) {
+        storage.updateValue(value, forKey: key)
     }
 }
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, Linking, Alert } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, Linking, Alert, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import { useAuth } from '../auth/AuthContext';
@@ -65,6 +65,7 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
       <Text style={styles.header}>Settings</Text>
 
       <Text style={styles.sectionLabel}>{serviceName} account</Text>
@@ -175,12 +176,14 @@ export default function SettingsScreen() {
           Tempo data provided by <Text style={styles.attributionLink}>GetSongBPM.com</Text>
         </Text>
       </Pressable>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, padding: 24 },
+  container: { flex: 1, backgroundColor: colors.background },
+  scrollContent: { padding: 24, paddingBottom: 48 },
   header: { fontSize: 28, fontWeight: '700', color: colors.text, marginBottom: 24 },
   sectionLabel: {
     fontSize: 13,
