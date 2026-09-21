@@ -23,6 +23,12 @@ type LiveCadenceState = {
   deviceName: string | null;
   /** Only ever non-null once connectionStatus is 'ready'. */
   currentCadence: number | null;
+  /** Apple Watch only — cumulative steps this workout; null for other sources. */
+  currentSteps: number | null;
+  /** Apple Watch only — most recent running speed in m/s; null when not
+   * moving or for other sources. Consumers convert to pace in the unit
+   * the runner chose. */
+  currentSpeedMps: number | null;
   /** No-op when cadenceSource isn't 'garmin'. */
   findDevice: () => void;
   /** No-op unless cadenceSource is 'healthkit' or 'appleWatch'. Shows
@@ -50,6 +56,8 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
   const [connectionStatus, setConnectionStatus] = useState<LiveCadenceStatus>('idle');
   const [deviceName, setDeviceName] = useState<string | null>(null);
   const [currentCadence, setCurrentCadence] = useState<number | null>(null);
+  const [currentSteps, setCurrentSteps] = useState<number | null>(null);
+  const [currentSpeedMps, setCurrentSpeedMps] = useState<number | null>(null);
 
   useEffect(() => {
     if (cadenceSource === 'garmin') {
@@ -80,11 +88,19 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
         // 'tracking' -> 'ready': see the module-level note on why.
         const normalized = event.status === 'tracking' ? 'ready' : event.status;
         setConnectionStatus(normalized);
-        if (normalized !== 'ready') setCurrentCadence(null);
+        if (normalized !== 'ready') {
+          setCurrentCadence(null);
+          setCurrentSteps(null);
+          setCurrentSpeedMps(null);
+        }
       });
 
       const cadenceSub = HealthKitCadence.addCadenceListener((event) => {
         setCurrentCadence(event.cadence);
+        if (event.steps != null) setCurrentSteps(event.steps);
+        // Speed is omitted from the payload when the Watch has none yet
+        // (no GPS fix) — keep the last known value rather than flickering.
+        if (event.speedMps != null) setCurrentSpeedMps(event.speedMps);
       });
 
       return () => {
@@ -96,6 +112,8 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
     setConnectionStatus('idle');
     setDeviceName(null);
     setCurrentCadence(null);
+    setCurrentSteps(null);
+    setCurrentSpeedMps(null);
   }, [cadenceSource]);
 
   const findDevice = () => {
@@ -136,6 +154,8 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
         connectionStatus,
         deviceName,
         currentCadence,
+        currentSteps,
+        currentSpeedMps,
         findDevice,
         requestHealthAccess,
         startTracking,

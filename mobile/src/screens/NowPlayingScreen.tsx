@@ -22,6 +22,7 @@ import {
 } from '../api/client';
 import * as AppleMusic from '../../modules/apple-music';
 import type { WorkoutStackParamList } from '../navigation/WorkoutStack';
+import type { PaceUnit } from '../utils/paceToCadence';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'NowPlaying'>;
 
@@ -34,8 +35,16 @@ export default function NowPlayingScreen({ route }: Props) {
   const isAppleMusic = musicSource === 'appleMusic';
   const { defaultTolerance, cadenceSource } = useSettings();
   const { setSession } = useWorkoutSession();
-  const { startTracking, stopTracking, setTargetCadence, connectionStatus, currentCadence, deviceName } =
-    useLiveCadence();
+  const {
+    startTracking,
+    stopTracking,
+    setTargetCadence,
+    connectionStatus,
+    currentCadence,
+    currentSteps,
+    currentSpeedMps,
+    deviceName,
+  } = useLiveCadence();
   const isFocused = useIsFocused();
 
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>('checking');
@@ -385,6 +394,10 @@ export default function NowPlayingScreen({ route }: Props) {
           targetCadence={activeTargetCadence}
           tolerance={defaultTolerance}
           unit={unit ?? 'spm'}
+          steps={currentSteps}
+          speedMps={currentSpeedMps}
+          paceUnit={paceUnit ?? 'mi'}
+          targetPaceSeconds={isSingleTarget ? targetPaceSeconds : undefined}
         />
       )}
 
@@ -435,6 +448,14 @@ const CADENCE_STATUS_LABEL: Record<string, string> = {
  * to tell whether nudges were silent because pace was fine or because no
  * data was flowing at all.
  */
+const METERS_PER_UNIT: Record<PaceUnit, number> = { mi: 1609.344, km: 1000 };
+
+function formatPace(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
 function LiveCadenceCard({
   cadenceSource,
   deviceName,
@@ -443,6 +464,10 @@ function LiveCadenceCard({
   targetCadence,
   tolerance,
   unit,
+  steps,
+  speedMps,
+  paceUnit,
+  targetPaceSeconds,
 }: {
   cadenceSource: Exclude<CadenceSource, 'none'>;
   deviceName: string | null;
@@ -451,10 +476,27 @@ function LiveCadenceCard({
   targetCadence: number | undefined;
   tolerance: number;
   unit: string;
+  /** Apple Watch only; null for Garmin / iPhone HealthKit. */
+  steps: number | null;
+  speedMps: number | null;
+  /** The unit the runner chose in Workout Setup — pace is always shown in it. */
+  paceUnit: PaceUnit;
+  /** Only when the workout was set up "By pace". Seconds per paceUnit. */
+  targetPaceSeconds: number | undefined;
 }) {
   const isLive = connectionStatus === 'ready';
   const diff = currentCadence != null && targetCadence != null ? currentCadence - targetCadence : null;
   const withinTolerance = diff != null && Math.abs(diff) <= tolerance;
+
+  // Pace from the Watch's running speed, in the runner's unit. Below
+  // ~0.2 m/s they're standing still — no meaningful pace.
+  const paceSeconds =
+    speedMps != null && speedMps > 0.2 ? Math.round(METERS_PER_UNIT[paceUnit] / speedMps) : null;
+  const paceDelta = paceSeconds != null && targetPaceSeconds != null ? paceSeconds - targetPaceSeconds : null;
+  // 15 s per mile/km is the "close enough" band for pace, mirroring the
+  // cadence tolerance's role. Positive delta = slower than target.
+  const paceOnTarget = paceDelta != null && Math.abs(paceDelta) <= 15;
+  const hasWatchExtras = steps != null || speedMps != null;
 
   return (
     <View style={styles.cadenceCard}>
@@ -487,6 +529,40 @@ function LiveCadenceCard({
           <Text style={styles.cadenceStatLabel}>{diff == null ? 'Δ' : withinTolerance ? 'On pace' : 'Off pace'}</Text>
         </View>
       </View>
+
+      {/* Second row: Apple Watch extras. Pace is in the runner's unit; the
+          target pace column only exists for "By pace" setups. */}
+      {hasWatchExtras && (
+        <View style={[styles.cadenceNumbers, styles.cadenceSecondRow]}>
+          <View style={styles.cadenceStat}>
+            <Text style={styles.cadenceValueSmall}>{paceSeconds != null ? formatPace(paceSeconds) : '—:—'}</Text>
+            <Text style={styles.cadenceStatLabel}>Pace /{paceUnit}</Text>
+          </View>
+          {targetPaceSeconds != null && (
+            <>
+              <View style={styles.cadenceStat}>
+                <Text style={styles.cadenceValueSmall}>{formatPace(targetPaceSeconds)}</Text>
+                <Text style={styles.cadenceStatLabel}>Target /{paceUnit}</Text>
+              </View>
+              <View style={styles.cadenceStat}>
+                <Text
+                  style={[
+                    styles.cadenceValueSmall,
+                    paceDelta != null && (paceOnTarget ? styles.cadenceOnPace : styles.cadenceOffPace),
+                  ]}
+                >
+                  {paceDelta == null ? '—' : `${paceDelta > 0 ? '+' : paceDelta < 0 ? '−' : ''}${formatPace(Math.abs(paceDelta))}`}
+                </Text>
+                <Text style={styles.cadenceStatLabel}>{paceDelta == null ? 'Δ pace' : paceDelta > 0 ? 'Slow' : paceDelta < 0 ? 'Fast' : 'On'}</Text>
+              </View>
+            </>
+          )}
+          <View style={styles.cadenceStat}>
+            <Text style={styles.cadenceValueSmall}>{steps != null ? steps.toLocaleString() : '—'}</Text>
+            <Text style={styles.cadenceStatLabel}>Steps</Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -513,6 +589,8 @@ const styles = StyleSheet.create({
   cadenceStat: { alignItems: 'center', minWidth: 72 },
   cadenceValue: { fontSize: 26, fontWeight: '700', color: colors.text, fontVariant: ['tabular-nums'] },
   cadenceStatLabel: { fontSize: 11, color: colors.textMuted, marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.4 },
+  cadenceSecondRow: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border },
+  cadenceValueSmall: { fontSize: 18, fontWeight: '700', color: colors.text, fontVariant: ['tabular-nums'] },
   cadenceOnPace: { color: '#3CB371' },
   cadenceOffPace: { color: '#D64545' },
   center: {

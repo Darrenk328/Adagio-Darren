@@ -292,7 +292,13 @@ public class HealthKitCadenceModule: Module {
                 guard let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let cadence = payload["cadence"] as? Int
                 else { continue }
-                self.sendEvent("onCadenceReceived", ["cadence": cadence])
+                // Steps and speed (m/s) are Watch-only extras; Garmin and
+                // the iPhone-owned path emit cadence alone. JS treats them
+                // as optional.
+                var event: [String: Any] = ["cadence": cadence]
+                if let steps = payload["steps"] as? Int { event["steps"] = steps }
+                if let speed = payload["speedMps"] as? Double { event["speedMps"] = speed }
+                self.sendEvent("onCadenceReceived", event)
             }
         }
         return handler

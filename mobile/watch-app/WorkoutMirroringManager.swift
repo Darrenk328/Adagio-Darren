@@ -215,7 +215,10 @@ final class WorkoutMirroringManager: NSObject, ObservableObject {
         guard now.timeIntervalSince(lastSendDate) >= 1 else { return }
         lastSendDate = now
 
-        let payload: [String: Int] = ["cadence": cadence, "steps": steps]
+        // Speed rides along so the phone can show pace in the runner's unit
+        // (it does the unit conversion itself; the Watch just reports m/s).
+        var payload: [String: Any] = ["cadence": cadence, "steps": steps]
+        if let mps = speedMetersPerSecond { payload["speedMps"] = mps }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
         Task {
             do {

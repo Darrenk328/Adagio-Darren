@@ -8,7 +8,13 @@ import { requireNativeModule, EventEmitter, type Subscription } from 'expo-modul
 export type TrackingStatus = 'idle' | 'tracking' | 'stopped' | 'error' | 'unavailable';
 
 export type StatusEvent = { status: TrackingStatus; error?: string };
-export type CadenceEvent = { cadence: number };
+export type CadenceEvent = {
+  cadence: number;
+  /** Apple Watch only: cumulative steps this workout. */
+  steps?: number;
+  /** Apple Watch only: most recent running speed, m/s (convert to pace in the runner's unit). */
+  speedMps?: number;
+};
 
 const nativeModule = requireNativeModule('HealthKitCadenceModule');
 const emitter = new EventEmitter(nativeModule);
