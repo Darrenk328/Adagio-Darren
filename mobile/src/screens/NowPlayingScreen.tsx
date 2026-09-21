@@ -6,7 +6,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { colors } from '../theme/colors';
 import { formatDuration } from '../utils/duration';
 import { useAuth } from '../auth/AuthContext';
-import { useSettings } from '../settings/SettingsContext';
+import { useSettings, type CadenceSource } from '../settings/SettingsContext';
 import { useWorkoutSession } from '../workout/WorkoutSessionContext';
 import { useCadenceNudges } from '../cadence/useCadenceNudges';
 import { useLiveCadence } from '../cadence/LiveCadenceContext';
@@ -33,7 +33,7 @@ export default function NowPlayingScreen({ route }: Props) {
   const isAppleMusic = musicSource === 'appleMusic';
   const { defaultTolerance, cadenceSource } = useSettings();
   const { setSession } = useWorkoutSession();
-  const { startTracking, stopTracking } = useLiveCadence();
+  const { startTracking, stopTracking, connectionStatus, currentCadence, deviceName } = useLiveCadence();
   const isFocused = useIsFocused();
 
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>('checking');
@@ -356,6 +356,18 @@ export default function NowPlayingScreen({ route }: Props) {
         </View>
       )}
 
+      {cadenceSource !== 'none' && (
+        <LiveCadenceCard
+          cadenceSource={cadenceSource}
+          deviceName={deviceName}
+          connectionStatus={connectionStatus}
+          currentCadence={currentCadence}
+          targetCadence={activeTargetCadence}
+          tolerance={defaultTolerance}
+          unit={unit ?? 'spm'}
+        />
+      )}
+
       <Text style={styles.elapsedLabel}>Elapsed</Text>
       <Text style={styles.elapsedTime}>{formatDuration(elapsedSec)}</Text>
 
@@ -371,8 +383,118 @@ export default function NowPlayingScreen({ route }: Props) {
   );
 }
 
+const SOURCE_LABEL: Record<Exclude<CadenceSource, 'none'>, string> = {
+  garmin: 'Garmin',
+  healthkit: 'iPhone (HealthKit)',
+  appleWatch: 'Apple Watch',
+};
+
+// Only 'ready' means cadence is actually flowing — everything else is
+// some flavor of "not yet" (see LiveCadenceContext; HealthKit's 'tracking'
+// is normalized to 'ready' there too).
+const CADENCE_STATUS_LABEL: Record<string, string> = {
+  idle: 'Waiting…',
+  ready: 'Live',
+  connected: 'Connecting…',
+  found: 'Connecting…',
+  opening: 'Opening Garmin Connect…',
+  needsGCM: 'Garmin Connect not installed',
+  notConnected: 'Not connected',
+  bluetoothNotReady: 'Bluetooth off',
+  notFound: 'Watch not found',
+  stopped: 'Not tracking',
+  error: 'Error',
+  unavailable: 'Needs iOS 26+',
+};
+
+/**
+ * In-workout view of the live cadence feed — the one place you can see,
+ * during a run, that data is actually arriving from the selected source
+ * and how it compares to the target. Before this, the only readout was on
+ * the Settings tab, which isn't visible mid-workout, so there was no way
+ * to tell whether nudges were silent because pace was fine or because no
+ * data was flowing at all.
+ */
+function LiveCadenceCard({
+  cadenceSource,
+  deviceName,
+  connectionStatus,
+  currentCadence,
+  targetCadence,
+  tolerance,
+  unit,
+}: {
+  cadenceSource: Exclude<CadenceSource, 'none'>;
+  deviceName: string | null;
+  connectionStatus: string;
+  currentCadence: number | null;
+  targetCadence: number | undefined;
+  tolerance: number;
+  unit: string;
+}) {
+  const isLive = connectionStatus === 'ready';
+  const diff = currentCadence != null && targetCadence != null ? currentCadence - targetCadence : null;
+  const withinTolerance = diff != null && Math.abs(diff) <= tolerance;
+
+  return (
+    <View style={styles.cadenceCard}>
+      <View style={styles.cadenceHeader}>
+        <Text style={styles.cadenceSource}>{deviceName ?? SOURCE_LABEL[cadenceSource]}</Text>
+        <View style={styles.cadenceStatusRow}>
+          <View style={[styles.cadenceDot, isLive ? styles.cadenceDotLive : styles.cadenceDotIdle]} />
+          <Text style={styles.cadenceStatus}>{CADENCE_STATUS_LABEL[connectionStatus] ?? connectionStatus}</Text>
+        </View>
+      </View>
+
+      <View style={styles.cadenceNumbers}>
+        <View style={styles.cadenceStat}>
+          <Text style={styles.cadenceValue}>{currentCadence ?? '—'}</Text>
+          <Text style={styles.cadenceStatLabel}>Live {unit}</Text>
+        </View>
+        <View style={styles.cadenceStat}>
+          <Text style={styles.cadenceValue}>{targetCadence ?? '—'}</Text>
+          <Text style={styles.cadenceStatLabel}>Target</Text>
+        </View>
+        <View style={styles.cadenceStat}>
+          <Text
+            style={[
+              styles.cadenceValue,
+              diff != null && (withinTolerance ? styles.cadenceOnPace : styles.cadenceOffPace),
+            ]}
+          >
+            {diff == null ? '—' : `${diff > 0 ? '+' : ''}${diff}`}
+          </Text>
+          <Text style={styles.cadenceStatLabel}>{diff == null ? 'Δ' : withinTolerance ? 'On pace' : 'Off pace'}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background, padding: 24, alignItems: 'center' },
+  cadenceCard: {
+    width: '100%',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 16,
+  },
+  cadenceHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  cadenceSource: { fontSize: 13, fontWeight: '600', color: colors.text },
+  cadenceStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  cadenceDot: { width: 8, height: 8, borderRadius: 4 },
+  cadenceDotLive: { backgroundColor: '#3CB371' },
+  cadenceDotIdle: { backgroundColor: colors.textMuted },
+  cadenceStatus: { fontSize: 12, color: colors.textMuted },
+  cadenceNumbers: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 12 },
+  cadenceStat: { alignItems: 'center', minWidth: 72 },
+  cadenceValue: { fontSize: 26, fontWeight: '700', color: colors.text, fontVariant: ['tabular-nums'] },
+  cadenceStatLabel: { fontSize: 11, color: colors.textMuted, marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.4 },
+  cadenceOnPace: { color: '#3CB371' },
+  cadenceOffPace: { color: '#D64545' },
   center: {
     flex: 1,
     backgroundColor: colors.background,
