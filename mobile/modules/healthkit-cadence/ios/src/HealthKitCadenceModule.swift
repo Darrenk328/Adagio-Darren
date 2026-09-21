@@ -4,15 +4,17 @@ import HealthKit
 /// Live running cadence estimated from the iPhone's OWN motion sensors via
 /// an iPhone-owned HKWorkoutSession — NOT genuine Apple Watch telemetry.
 ///
+/// Two paths, both live: `start()`/`stop()` (called from JS around a
+/// workout's lifecycle) drive an iPhone-owned session for the 'healthkit'
+/// cadence source; `startObservingMirroredSessions` (armed automatically
+/// at launch, called from nowhere in JS) adopts a session a real Apple
+/// Watch starts and mirrors over, for the 'appleWatch' cadence source —
+/// see the "Adagio Watch Connection Watch App" target's
+/// WorkoutMirroringManager.swift, the thing that actually sends it.
 /// Ported from the partner's standalone HealthKitCadenceProvider.swift
-/// (their from-scratch SwiftUI rewrite), primary-session path only. That
-/// reference also implemented a *mirrored* session (a real Watch owning
-/// the workout, this phone just receiving) — deliberately left out here:
-/// it requires a watchOS companion app target this project doesn't have,
-/// which is a Garmin-integration-sized undertaking on its own, not
-/// something to fold into this pass. If genuine Watch-measured cadence is
-/// wanted later, that mirrored path is the one to build — see this
-/// module's git history / the original file for the receiving-side code.
+/// (their from-scratch SwiftUI rewrite), which sketched both paths but
+/// only ever ran the first — this project didn't have a watchOS target
+/// to receive from until now.
 ///
 /// HealthKit has no running-cadence quantity type at all (cyclingCadence
 /// exists, no running equivalent) — what Fitness/the Watch show as
@@ -37,6 +39,11 @@ public class HealthKitCadenceModule: Module {
     private var session: Any?
     private var builder: Any?
     private var delegateHandler: Any?
+    // Only a phone-owned session may finish the workout; for a mirrored
+    // one the Watch owns collection lifecycle, so finishing it from here
+    // would race with the Watch's own stop. Plain Bool — doesn't need
+    // the Any? erasure the HealthKit types above need.
+    private var isMirroredFromWatch = false
 
     // Rolling (timestamp, cumulative steps) samples — cadence is the
     // slope of this series, so at least two points spanning enough time
@@ -68,6 +75,18 @@ public class HealthKitCadenceModule: Module {
         // status: "idle" | "tracking" | "stopped" | "error" | "unavailable"
         Events("onStatusChanged", "onCadenceReceived")
 
+        // Arms mirrored-session observation as soon as the app launches —
+        // not on-demand from JS. Apple's own guidance: call this early,
+        // since if the app isn't even running when the Watch starts a
+        // session, iOS launches it in the background and delivers the
+        // session through this handler exactly once. There's nothing for
+        // JS to call to enable the 'appleWatch' cadence source — it's
+        // always listening, and just does nothing until a Watch actually
+        // starts mirroring one over.
+        OnCreate {
+            self.startObservingMirroredSessions()
+        }
+
         Function("isHealthDataAvailable") { () -> Bool in
             HKHealthStore.isHealthDataAvailable()
         }
@@ -97,27 +116,7 @@ public class HealthKitCadenceModule: Module {
             guard HKHealthStore.isHealthDataAvailable() else { throw HealthUnavailableError() }
             guard self.session == nil else { return }
 
-            let handler = HealthKitCadenceDelegateHandler()
-            handler.onStateChanged = { [weak self] state in
-                guard let self else { return }
-                switch state {
-                case .running:
-                    self.sendEvent("onStatusChanged", ["status": "tracking"])
-                case .ended, .stopped:
-                    self.sendEvent("onStatusChanged", ["status": "stopped"])
-                    self.teardown()
-                default:
-                    break
-                }
-            }
-            handler.onError = { [weak self] error in
-                self?.sendEvent("onStatusChanged", ["status": "error", "error": error.localizedDescription])
-                self?.teardown()
-            }
-            handler.onStepStatistics = { [weak self] statistics in
-                self?.ingestStepStatistics(statistics)
-            }
-
+            let handler = self.makeDelegateHandler()
             let configuration = HKWorkoutConfiguration()
             configuration.activityType = .running
             configuration.locationType = .outdoor
@@ -136,6 +135,7 @@ public class HealthKitCadenceModule: Module {
                 self.session = session
                 self.builder = builder
                 self.delegateHandler = handler
+                self.isMirroredFromWatch = false
                 self.resetDerivationState()
 
                 let startDate = Date()
@@ -147,11 +147,20 @@ public class HealthKitCadenceModule: Module {
             }
         }
 
+        // Only meaningful for the 'healthkit' (iPhone-owned) path — JS
+        // never calls this for 'appleWatch' sessions, since the Watch (not
+        // the phone) controls when a mirrored workout starts and stops.
+        // Still guarded defensively below in case that ever changes.
         AsyncFunction("stop") { () -> Void in
             guard #available(iOS 26.0, *) else { return }
             guard let session = self.session as? HKWorkoutSession,
                   let builder = self.builder as? HKLiveWorkoutBuilder
             else { return }
+
+            guard !self.isMirroredFromWatch else {
+                self.teardown()
+                return
+            }
 
             session.end()
             do {
@@ -165,6 +174,64 @@ public class HealthKitCadenceModule: Module {
         }
     }
 
+    // Arms the mirrored-session handler — see the OnCreate block above
+    // for why this runs at launch rather than being JS-triggered.
+    private func startObservingMirroredSessions() {
+        guard #available(iOS 26.0, *) else { return }
+        healthStore.workoutSessionMirroringStartHandler = { [weak self] mirroredSession in
+            guard let self else { return }
+            Task { @MainActor in
+                self.adopt(mirroredSession)
+            }
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private func adopt(_ mirroredSession: HKWorkoutSession) {
+        let builder = mirroredSession.associatedWorkoutBuilder()
+        let handler = makeDelegateHandler()
+
+        mirroredSession.delegate = handler
+        builder.delegate = handler
+
+        session = mirroredSession
+        self.builder = builder
+        delegateHandler = handler
+        isMirroredFromWatch = true
+        resetDerivationState()
+
+        // No beginCollection call — the Watch already owns collection
+        // for a mirrored session; this side only receives what it sends.
+        sendEvent("onStatusChanged", ["status": "tracking"])
+    }
+
+    // Shared between start()'s iPhone-owned session and adopt()'s
+    // Watch-mirrored one — both wire the exact same three callbacks.
+    @available(iOS 26.0, *)
+    private func makeDelegateHandler() -> HealthKitCadenceDelegateHandler {
+        let handler = HealthKitCadenceDelegateHandler()
+        handler.onStateChanged = { [weak self] state in
+            guard let self else { return }
+            switch state {
+            case .running:
+                self.sendEvent("onStatusChanged", ["status": "tracking"])
+            case .ended, .stopped:
+                self.sendEvent("onStatusChanged", ["status": "stopped"])
+                self.teardown()
+            default:
+                break
+            }
+        }
+        handler.onError = { [weak self] error in
+            self?.sendEvent("onStatusChanged", ["status": "error", "error": error.localizedDescription])
+            self?.teardown()
+        }
+        handler.onStepStatistics = { [weak self] statistics in
+            self?.ingestStepStatistics(statistics)
+        }
+        return handler
+    }
+
     private func teardown() {
         if #available(iOS 26.0, *) {
             (session as? HKWorkoutSession)?.delegate = nil
@@ -173,6 +240,7 @@ public class HealthKitCadenceModule: Module {
         session = nil
         builder = nil
         delegateHandler = nil
+        isMirroredFromWatch = false
         resetDerivationState()
     }
 

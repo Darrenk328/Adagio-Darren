@@ -47,6 +47,15 @@ export default function SettingsScreen() {
   const handleRequestHealthAccess = async () => {
     try {
       await requestHealthAccess();
+      // HealthKit only shows its system prompt once ever per app — if
+      // access was already granted or denied earlier (e.g. from testing
+      // the other HealthKit-based source), this resolves instantly with
+      // no dialog at all. Without this, that looked indistinguishable
+      // from "the button doesn't work" — real bug report from testing.
+      Alert.alert(
+        'HealthKit access requested',
+        'If this is the first time, you should have seen a system permission prompt. If not, a decision was already made previously — check Settings app › Privacy & Security › Health › Adagio to confirm.',
+      );
     } catch (err) {
       // HealthKit never reveals whether READ access was actually granted
       // (a denied read type just silently returns no data later) — this
@@ -121,13 +130,25 @@ export default function SettingsScreen() {
               iPhone (HealthKit)
             </Text>
           </Pressable>
+          <Pressable
+            style={[styles.cadenceOption, cadenceSource === 'appleWatch' && styles.cadenceOptionActive]}
+            onPress={() => setCadenceSource('appleWatch')}
+          >
+            <Text
+              style={[styles.cadenceOptionText, cadenceSource === 'appleWatch' && styles.cadenceOptionTextActive]}
+            >
+              Apple Watch
+            </Text>
+          </Pressable>
         </View>
         <Text style={styles.hint}>
           {cadenceSource === 'healthkit'
             ? // Deliberately not calling this "Apple Watch" — it's cadence estimated
               // from the iPhone's own sensors via HealthKit, not real Watch telemetry.
               'Estimates your cadence from the iPhone’s own motion sensors during a workout. Requires iOS 26+ and a granted HealthKit permission below.'
-            : 'When set to Garmin Watch, live cadence from a paired watch drives in-workout voice nudges when your pace drifts from the target.'}
+            : cadenceSource === 'appleWatch'
+              ? 'Reads real live cadence from a paired Apple Watch. Open the Adagio app on your Watch and start a workout there to begin — tracking starts and stops from the Watch, not from here.'
+              : 'When set to Garmin Watch, live cadence from a paired watch drives in-workout voice nudges when your pace drifts from the target.'}
         </Text>
 
         {cadenceSource === 'garmin' && (
@@ -169,6 +190,28 @@ export default function SettingsScreen() {
             </Text>
           </View>
         )}
+
+        {cadenceSource === 'appleWatch' && (
+          <View style={styles.garminStatus}>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Status</Text>
+              <Text style={styles.rowValue}>{STATUS_LABEL[connectionStatus] ?? connectionStatus}</Text>
+            </View>
+            {currentCadence != null && (
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Live cadence</Text>
+                <Text style={styles.rowValue}>{currentCadence} spm</Text>
+              </View>
+            )}
+            <Pressable style={styles.logoutButton} onPress={handleRequestHealthAccess}>
+              <Text style={styles.logoutButtonText}>Request HealthKit Access</Text>
+            </Pressable>
+            <Text style={styles.hint}>
+              Grant this once, ahead of time. Adagio listens for a mirrored session automatically —
+              starting and stopping happens on the Watch itself.
+            </Text>
+          </View>
+        )}
       </View>
 
       <Pressable onPress={() => Linking.openURL(GETSONGBPM_URL)} style={styles.attribution}>
@@ -201,9 +244,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
   },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  rowLabel: { fontSize: 15, color: colors.text, fontWeight: '600' },
-  rowValue: { fontSize: 15, color: colors.textMuted },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+  // rowLabel keeps its natural width (device names are short); rowValue
+  // takes the rest and wraps instead of overflowing off-screen — status
+  // strings like "Found device — waiting for connection…" are longer
+  // than this row was originally designed for.
+  rowLabel: { fontSize: 15, color: colors.text, fontWeight: '600', flexShrink: 0, marginRight: 12 },
+  rowValue: { fontSize: 15, color: colors.textMuted, flex: 1, textAlign: 'right' },
   logoutButton: {
     backgroundColor: colors.border,
     paddingVertical: 12,
@@ -223,8 +270,18 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   hint: { fontSize: 12, color: colors.textMuted, lineHeight: 17 },
-  cadenceToggle: { flexDirection: 'row', backgroundColor: colors.border, borderRadius: 8, padding: 3, marginBottom: 10 },
-  cadenceOption: { flex: 1, paddingVertical: 8, borderRadius: 6, alignItems: 'center' },
+  // flexWrap, not a single flex:1 row: four options ("iPhone (HealthKit)",
+  // "Apple Watch", etc.) don't fit legibly across one row on a normal
+  // phone width — wraps into a 2x2 grid instead of squeezing/clipping text.
+  cadenceToggle: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    backgroundColor: colors.border,
+    borderRadius: 8,
+    padding: 3,
+    marginBottom: 10,
+  },
+  cadenceOption: { flexGrow: 1, flexBasis: '46%', paddingVertical: 8, borderRadius: 6, alignItems: 'center', margin: 2 },
   cadenceOptionActive: { backgroundColor: colors.surface },
   cadenceOptionText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
   cadenceOptionTextActive: { color: colors.text },

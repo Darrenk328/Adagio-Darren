@@ -8,11 +8,12 @@ import * as SecureStore from 'expo-secure-store';
 //
 // 'healthkit' is cadence ESTIMATED from the iPhone's own sensors via an
 // HKWorkoutSession (modules/healthkit-cadence) — NOT genuine Apple Watch
-// telemetry, unlike 'garmin' which really does read a paired watch. Named
-// for the mechanism rather than "appleWatch" so it doesn't get mistaken
-// later for real Watch-measured data, which needs a watchOS companion
-// app this project doesn't have.
-export type CadenceSource = 'none' | 'garmin' | 'healthkit';
+// telemetry. 'appleWatch' IS genuine Watch telemetry: a real HKWorkoutSession
+// started on a paired Apple Watch (the "Adagio Watch Connection Watch App"
+// target) and mirrored to the phone. Both flow through the same native
+// module (they share its session/delegate machinery) but are kept as
+// separate values so neither gets mistaken for the other in the UI.
+export type CadenceSource = 'none' | 'garmin' | 'healthkit' | 'appleWatch';
 
 type SettingsState = {
   defaultTolerance: number;
@@ -30,7 +31,7 @@ const FALLBACK_TOLERANCE = 5;
 const FALLBACK_CADENCE_SOURCE: CadenceSource = 'none';
 
 function isCadenceSource(value: string): value is CadenceSource {
-  return value === 'none' || value === 'garmin' || value === 'healthkit';
+  return value === 'none' || value === 'garmin' || value === 'healthkit' || value === 'appleWatch';
 }
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {

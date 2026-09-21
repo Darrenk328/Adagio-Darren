@@ -19,21 +19,23 @@ type LiveCadenceStatus = ConnectionStatus | 'idle' | 'stopped' | 'error' | 'unav
 type LiveCadenceState = {
   /** 'idle' until a source is selected and connected/tracking. */
   connectionStatus: LiveCadenceStatus;
-  /** Garmin-only — always null for 'healthkit' (no paired device to name). */
+  /** Garmin-only — always null for 'healthkit'/'appleWatch' (no paired device to name). */
   deviceName: string | null;
   /** Only ever non-null once connectionStatus is 'ready'. */
   currentCadence: number | null;
   /** No-op when cadenceSource isn't 'garmin'. */
   findDevice: () => void;
-  /** No-op when cadenceSource isn't 'healthkit'. Shows HealthKit's system
-   * permission prompt — call once, e.g. from Settings, before startTracking. */
+  /** No-op unless cadenceSource is 'healthkit' or 'appleWatch'. Shows
+   * HealthKit's system permission prompt — call once, e.g. from Settings. */
   requestHealthAccess: () => Promise<void>;
   /** No-op when cadenceSource isn't 'healthkit'. Call when a workout
    * begins — HealthKit's session is workout-scoped, unlike Garmin's
    * ambient BLE connection, so there's no equivalent of findDevice()
-   * that makes sense to trigger from the Settings screen alone. */
+   * that makes sense to trigger from the Settings screen alone.
+   * 'appleWatch' never needs this: a real Watch controls when its own
+   * mirrored session starts and stops, not the phone. */
   startTracking: () => Promise<void>;
-  /** No-op when cadenceSource isn't 'healthkit'. Call when the workout ends. */
+  /** No-op when cadenceSource isn't 'healthkit' — see startTracking. */
   stopTracking: () => Promise<void>;
 };
 
@@ -66,7 +68,10 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
       };
     }
 
-    if (cadenceSource === 'healthkit') {
+    if (cadenceSource === 'healthkit' || cadenceSource === 'appleWatch') {
+      // Same native module, same events, for both — 'appleWatch' just
+      // never calls start()/stop() on it (see below): the Watch app
+      // controls when a mirrored session begins and ends, not the phone.
       const statusSub = HealthKitCadence.addStatusListener((event: HealthKitStatusEvent) => {
         // 'tracking' -> 'ready': see the module-level note on why.
         const normalized = event.status === 'tracking' ? 'ready' : event.status;
@@ -96,7 +101,9 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
   };
 
   const requestHealthAccess = async () => {
-    if (cadenceSource === 'healthkit') {
+    // Both sources need this — the phone reads step statistics off a
+    // mirrored (appleWatch) session too, same authorization as its own.
+    if (cadenceSource === 'healthkit' || cadenceSource === 'appleWatch') {
       await HealthKitCadence.requestAuthorization();
     }
   };
