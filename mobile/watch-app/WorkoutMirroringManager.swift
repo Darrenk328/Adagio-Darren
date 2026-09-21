@@ -87,6 +87,9 @@ final class WorkoutMirroringManager: NSObject, ObservableObject {
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
+            // If startActivity already ran, end the session rather than
+            // leaving it running orphaned behind a "Not tracking" screen.
+            session?.end()
             teardown()
         }
     }

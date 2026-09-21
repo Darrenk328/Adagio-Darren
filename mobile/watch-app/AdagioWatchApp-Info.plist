@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Base Info.plist for the "Adagio Watch Connection Watch App" target.
+	     The target uses GENERATE_INFOPLIST_FILE=YES, so Xcode merges its
+	     INFOPLIST_KEY_* build settings on top of this file. This file exists
+	     only for keys Xcode has no INFOPLIST_KEY_ equivalent for.
+
+	     Deliberately NOT inside the target's synchronized source folder:
+	     Xcode auto-adds files there to Copy Bundle Resources, and an
+	     Info.plist there collides with the generated one. -->
+
+	<!-- Required for an HKWorkoutSession to survive the app leaving the
+	     foreground — which on a Watch happens the instant the wrist drops.
+	     Without it watchOS ends the session immediately; on the phone that
+	     surfaced as the mirrored session arriving and then going straight
+	     to "Not tracking". -->
+	<key>WKBackgroundModes</key>
+	<array>
+		<string>workout-processing</string>
+	</array>
+</dict>
+</plist>

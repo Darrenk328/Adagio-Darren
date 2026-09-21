@@ -43,6 +43,11 @@ each item was a separate real failure.
    - `CODE_SIGN_ENTITLEMENTS` → `AdagioWatchApp.entitlements` (HealthKit)
    - Bundle ID must be prefixed by the phone app's; currently
      `com.darrenkapturski.Adagio.watchkitapp.watchkitapp`.
+   - `INFOPLIST_FILE` → `AdagioWatchApp-Info.plist` (kept *outside* the target's
+     synchronized folder). It carries `WKBackgroundModes = [workout-processing]`,
+     which has no `INFOPLIST_KEY_` equivalent. Without it watchOS ends the
+     workout session the moment the wrist drops — the phone saw the mirrored
+     session arrive and go straight to "Not tracking".
 4. Add the watch app target to the **Adagio scheme's Build list** with
    Run checked, or it simply won't build as part of the phone build.
 5. **Register the Watch's UDID** on developer.apple.com (Apple Configurator
