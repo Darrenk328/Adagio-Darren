@@ -41,6 +41,8 @@ export default function NowPlayingScreen({ route, navigation }: Props) {
     stopTracking,
     setTargetCadence,
     endWorkout: endCadenceWorkout,
+    startWatchWorkout,
+    watchStatus,
     connectionStatus,
     currentCadence,
     currentSteps,
@@ -184,6 +186,58 @@ export default function NowPlayingScreen({ route, navigation }: Props) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cadenceSource]);
+
+  // Apple Watch: launch the Watch app into a workout from here so the
+  // runner never has to start it on the wrist. startWatchWorkout resolves
+  // when watchOS accepts the launch; the mirrored session then arrives as
+  // connectionStatus 'ready'. Until it does, keep retrying — the Watch may
+  // be asleep, out of range, or still authorizing — and after a few
+  // failed rounds tell the user what to do about it.
+  const [watchError, setWatchError] = useState<string | null>(null);
+  const watchAttemptsRef = useRef(0);
+  const isWatchConnected = connectionStatus === 'ready';
+  useEffect(() => {
+    if (cadenceSource !== 'appleWatch') return;
+    if (isWatchConnected) {
+      setWatchError(null);
+      watchAttemptsRef.current = 0;
+      return;
+    }
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const attempt = async () => {
+      if (cancelled) return;
+      watchAttemptsRef.current += 1;
+      try {
+        await startWatchWorkout();
+      } catch (err) {
+        console.warn('[NowPlayingScreen] startWatchWorkout failed:', err);
+      }
+      if (cancelled) return;
+      if (watchAttemptsRef.current >= WATCH_ATTEMPTS_BEFORE_ERROR) {
+        setWatchError(
+          watchStatus && !watchStatus.paired
+            ? 'No Apple Watch is paired with this iPhone.'
+            : watchStatus && !watchStatus.appInstalled
+              ? 'Adagio isn’t installed on your Apple Watch. Install it from the Watch app on your iPhone.'
+              : 'Couldn’t connect to your Apple Watch. Go to Settings and reconnect Apple Watch, or open Adagio on the Watch and tap Start.',
+        );
+      }
+      // Slow down once we've told them, but never stop trying — it'll
+      // connect the moment the Watch comes back in range.
+      const delay = watchAttemptsRef.current >= WATCH_ATTEMPTS_BEFORE_ERROR ? 15_000 : 6_000;
+      timer = setTimeout(attempt, delay);
+    };
+    void attempt();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cadenceSource, isWatchConnected]);
 
   // Keep the Apple Watch told what the target is so it can show
   // live-vs-target on the wrist: re-sent whenever the active target
@@ -492,6 +546,7 @@ export default function NowPlayingScreen({ route, navigation }: Props) {
             speedMps={currentSpeedMps}
             paceUnit={paceUnit ?? 'mi'}
             targetPaceSeconds={isSingleTarget ? targetPaceSeconds : undefined}
+            errorMessage={watchError}
           />
         )}
       </ScrollView>
@@ -551,6 +606,9 @@ const CADENCE_STATUS_LABEL: Record<string, string> = {
  * to tell whether nudges were silent because pace was fine or because no
  * data was flowing at all.
  */
+/** Auto-start rounds (~6 s apart) before the card tells the runner what to do. */
+const WATCH_ATTEMPTS_BEFORE_ERROR = 3;
+
 const METERS_PER_UNIT: Record<PaceUnit, number> = { mi: 1609.344, km: 1000 };
 
 function formatPace(totalSeconds: number): string {
@@ -571,6 +629,7 @@ function LiveCadenceCard({
   speedMps,
   paceUnit,
   targetPaceSeconds,
+  errorMessage,
 }: {
   cadenceSource: Exclude<CadenceSource, 'none'>;
   deviceName: string | null;
@@ -586,6 +645,8 @@ function LiveCadenceCard({
   paceUnit: PaceUnit;
   /** Only when the workout was set up "By pace". Seconds per paceUnit. */
   targetPaceSeconds: number | undefined;
+  /** Shown under the numbers when the source can't be reached (Apple Watch auto-start). */
+  errorMessage?: string | null;
 }) {
   const isLive = connectionStatus === 'ready';
   const diff = currentCadence != null && targetCadence != null ? currentCadence - targetCadence : null;
@@ -666,6 +727,13 @@ function LiveCadenceCard({
           </View>
         </View>
       )}
+
+      {errorMessage && (
+        <View style={styles.cadenceErrorRow}>
+          <Ionicons name="alert-circle-outline" size={16} color="#D64545" />
+          <Text style={styles.cadenceErrorText}>{errorMessage}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -699,6 +767,16 @@ const styles = StyleSheet.create({
   cadenceValueSmall: { fontSize: 18, fontWeight: '700', color: colors.text, fontVariant: ['tabular-nums'] },
   cadenceOnPace: { color: '#3CB371' },
   cadenceOffPace: { color: '#D64545' },
+  cadenceErrorRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  cadenceErrorText: { flex: 1, fontSize: 12, lineHeight: 16, color: '#D64545' },
   center: {
     flex: 1,
     backgroundColor: colors.background,

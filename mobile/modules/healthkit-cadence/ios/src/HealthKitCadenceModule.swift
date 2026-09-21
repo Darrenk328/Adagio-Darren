@@ -203,6 +203,50 @@ public class HealthKitCadenceModule: Module {
             }
         }
 
+        // "Is there a Watch, and is Adagio on it?" — drives the Settings
+        // status line and the auto-start error copy. Never throws.
+        AsyncFunction("getWatchStatus") { () -> [String: Any] in
+            await WatchStatusBridge.shared.status().dictionary
+        }
+
+        // Launches the Adagio Watch app with a running-workout
+        // configuration; the Watch app's WKApplicationDelegate.handle(_:)
+        // starts (and mirrors) the session from there, so the runner never
+        // has to touch the Watch. Resolves when the launch request is
+        // accepted — the mirrored session shows up via the handler armed in
+        // OnCreate a moment later. Throws if the Watch can't be reached or
+        // Adagio isn't installed on it.
+        AsyncFunction("startWatchWorkout") { () -> Void in
+            guard HKHealthStore.isHealthDataAvailable() else { throw HealthUnavailableError() }
+            // Already mirroring — nothing to launch.
+            if self.isMirroredFromWatch, self.session != nil { return }
+
+            let configuration = HKWorkoutConfiguration()
+            configuration.activityType = .running
+            configuration.locationType = .outdoor
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                self.healthStore.startWatchApp(with: configuration) { success, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else if !success {
+                        continuation.resume(throwing: WatchLaunchFailedError())
+                    } else {
+                        continuation.resume()
+                    }
+                }
+            }
+        }
+
+        // Settings' "Reconnect": re-arms the mirrored-session handler (a
+        // Watch session already in progress is delivered to a freshly-set
+        // handler) and re-reports the current status so the UI settles.
+        AsyncFunction("reconnectWatch") { () -> [String: Any] in
+            self.startObservingMirroredSessions()
+            let active = self.isMirroredFromWatch && self.session != nil
+            self.sendEvent("onStatusChanged", ["status": active ? "tracking" : "idle"])
+            return await WatchStatusBridge.shared.status().dictionary
+        }
+
         // Only meaningful for the 'healthkit' (iPhone-owned) path — JS
         // never calls this for 'appleWatch' sessions, since the Watch (not
         // the phone) controls when a mirrored workout starts and stops.
@@ -376,4 +420,8 @@ struct HealthUnavailableError: Error, CustomStringConvertible {
 
 struct HealthKitVersionUnavailableError: Error, CustomStringConvertible {
     var description: String { "This requires iOS 26.0 or later." }
+}
+
+struct WatchLaunchFailedError: Error, CustomStringConvertible {
+    var description: String { "Couldn't launch Adagio on your Apple Watch." }
 }

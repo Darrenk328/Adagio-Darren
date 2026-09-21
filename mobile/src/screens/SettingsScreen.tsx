@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, Linking, Alert, ScrollView } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, Linking, Alert, ScrollView, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import { useAuth } from '../auth/AuthContext';
@@ -32,7 +33,35 @@ export default function SettingsScreen() {
   const { musicSource, logout } = useAuth();
   const serviceName = musicSource === 'appleMusic' ? 'Apple Music' : 'Spotify';
   const { defaultTolerance, setDefaultTolerance, cadenceSource, setCadenceSource } = useSettings();
-  const { connectionStatus, deviceName, currentCadence, findDevice, requestHealthAccess } = useLiveCadence();
+  const { connectionStatus, deviceName, currentCadence, findDevice, requestHealthAccess, watchStatus, reconnectWatch } =
+    useLiveCadence();
+  const [isReconnecting, setIsReconnecting] = useState(false);
+
+  const handleReconnectWatch = async () => {
+    setIsReconnecting(true);
+    try {
+      await reconnectWatch();
+    } catch (err) {
+      Alert.alert('Couldn’t reach Apple Watch', err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsReconnecting(false);
+    }
+  };
+
+  // For Apple Watch, "connected" only exists while a workout is mirroring;
+  // between workouts the useful question is whether a Watch with Adagio is
+  // there at all — so that's what the status line answers.
+  const watchStatusLabel =
+    connectionStatus === 'ready'
+      ? 'Tracking'
+      : watchStatus == null
+        ? 'Checking…'
+        : !watchStatus.supported || !watchStatus.paired
+          ? 'No Watch paired'
+          : !watchStatus.appInstalled
+            ? 'Adagio not on Watch'
+            : 'Ready';
+  const watchStatusIsGood = connectionStatus === 'ready' || (watchStatus?.paired && watchStatus?.appInstalled);
   const [toleranceInput, setToleranceInput] = useState(String(defaultTolerance));
 
   const handleToleranceBlur = () => {
@@ -147,7 +176,7 @@ export default function SettingsScreen() {
               // from the iPhone's own sensors via HealthKit, not real Watch telemetry.
               'Estimates your cadence from the iPhone’s own motion sensors during a workout. Requires iOS 26+ and a granted HealthKit permission below.'
             : cadenceSource === 'appleWatch'
-              ? 'Reads real live cadence from a paired Apple Watch. Open the Adagio app on your Watch and start a workout there to begin — tracking starts and stops from the Watch, not from here.'
+              ? 'Reads real live cadence from a paired Apple Watch. Starting a workout here launches Adagio on your Watch automatically; you can also start it from the Watch itself.'
               : 'When set to Garmin Watch, live cadence from a paired watch drives in-workout voice nudges when your pace drifts from the target.'}
         </Text>
 
@@ -195,8 +224,28 @@ export default function SettingsScreen() {
           <View style={styles.garminStatus}>
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Status</Text>
-              <Text style={styles.rowValue}>{STATUS_LABEL[connectionStatus] ?? connectionStatus}</Text>
+              <View style={styles.statusWithAction}>
+                <Text style={[styles.rowValue, !watchStatusIsGood && styles.rowValueWarn]}>{watchStatusLabel}</Text>
+                <Pressable
+                  style={({ pressed }) => [styles.reconnectButton, pressed && { opacity: 0.6 }]}
+                  onPress={handleReconnectWatch}
+                  disabled={isReconnecting}
+                  accessibilityLabel="Reconnect Apple Watch"
+                >
+                  {isReconnecting ? (
+                    <ActivityIndicator size="small" color={colors.text} />
+                  ) : (
+                    <Ionicons name="refresh" size={18} color={colors.text} />
+                  )}
+                </Pressable>
+              </View>
             </View>
+            {watchStatus && watchStatus.paired && !watchStatus.appInstalled && (
+              <Text style={styles.hint}>
+                Install Adagio on your Watch: open the Watch app on this iPhone, scroll to Available Apps, and tap
+                Install next to Adagio.
+              </Text>
+            )}
             {currentCadence != null && (
               <View style={styles.row}>
                 <Text style={styles.rowLabel}>Live cadence</Text>
@@ -207,8 +256,8 @@ export default function SettingsScreen() {
               <Text style={styles.logoutButtonText}>Request HealthKit Access</Text>
             </Pressable>
             <Text style={styles.hint}>
-              Grant this once, ahead of time. Adagio listens for a mirrored session automatically —
-              starting and stopping happens on the Watch itself.
+              Grant this once, ahead of time. Tap ↻ if a workout can’t find your Watch — it re-checks the
+              Watch and starts listening again.
             </Text>
           </View>
         )}
@@ -251,6 +300,18 @@ const styles = StyleSheet.create({
   // than this row was originally designed for.
   rowLabel: { fontSize: 15, color: colors.text, fontWeight: '600', flexShrink: 0, marginRight: 12 },
   rowValue: { fontSize: 15, color: colors.textMuted, flex: 1, textAlign: 'right' },
+  rowValueWarn: { color: '#D64545' },
+  statusWithAction: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10 },
+  reconnectButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   logoutButton: {
     backgroundColor: colors.border,
     paddingVertical: 12,

@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, Pressable, StyleSheet, ScrollView, Alert } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
@@ -37,7 +38,7 @@ function averageCadence(record: WorkoutRecord): number | null {
 }
 
 export default function HomeScreen({ navigation }: Props) {
-  const { workouts, isLoading } = useWorkoutHistory();
+  const { workouts, isLoading, removeWorkout } = useWorkoutHistory();
   const recent = workouts.slice(0, RECENT_LIMIT);
 
   const openWorkout = (record: WorkoutRecord) => {
@@ -48,6 +49,13 @@ export default function HomeScreen({ navigation }: Props) {
       params: { ...record, fromHistory: true },
       initial: false,
     });
+  };
+
+  const confirmDelete = (record: WorkoutRecord) => {
+    Alert.alert('Delete this workout?', `${record.playlistName} · ${formatWhen(record.endedAt)}`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => void removeWorkout(record.id) },
+    ]);
   };
 
   return (
@@ -71,10 +79,22 @@ export default function HomeScreen({ navigation }: Props) {
             const avg = averageCadence(record);
             const songCount = record.songs.length;
             return (
-              <Pressable
+              // Swipe left to reveal Delete; long-press does the same for
+              // anyone who doesn't discover the swipe.
+              <Swipeable
                 key={record.id}
+                overshootRight={false}
+                renderRightActions={() => (
+                  <Pressable style={styles.deleteAction} onPress={() => confirmDelete(record)}>
+                    <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+                    <Text style={styles.deleteActionText}>Delete</Text>
+                  </Pressable>
+                )}
+              >
+              <Pressable
                 style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
                 onPress={() => openWorkout(record)}
+                onLongPress={() => confirmDelete(record)}
               >
                 <View style={styles.cardIcon}>
                   <Ionicons name={SOURCE_ICON[record.cadenceSource] ?? 'walk-outline'} size={20} color={colors.secondary} />
@@ -94,6 +114,7 @@ export default function HomeScreen({ navigation }: Props) {
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
               </Pressable>
+              </Swipeable>
             );
           })}
         </View>
@@ -129,6 +150,17 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   cardPressed: { opacity: 0.7 },
+  deleteAction: {
+    width: 84,
+    marginBottom: 10,
+    marginLeft: 8,
+    borderRadius: 12,
+    backgroundColor: '#D64545',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  deleteActionText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
   cardIcon: {
     width: 40,
     height: 40,

@@ -60,6 +60,35 @@ export async function setTargetCadence(
   return nativeModule.setTargetCadence(target, tolerance, options.paceUnit ?? null, options.targetPaceSeconds ?? null);
 }
 
+export type WatchStatus = {
+  /** false on iPads etc. where WatchConnectivity doesn't exist. */
+  supported: boolean;
+  paired: boolean;
+  /** Whether the Adagio Watch app is installed on the paired Watch. */
+  appInstalled: boolean;
+};
+
+/** Whether an Apple Watch is paired and has the Adagio Watch app. Never rejects. */
+export async function getWatchStatus(): Promise<WatchStatus> {
+  return nativeModule.getWatchStatus();
+}
+
+/**
+ * Launches the Adagio Watch app with a running-workout configuration so it
+ * starts (and mirrors) a session without the runner touching the Watch.
+ * Resolves once the launch is accepted; the session itself arrives via
+ * onStatusChanged 'tracking' shortly after. Rejects if the Watch can't be
+ * reached or doesn't have the app.
+ */
+export async function startWatchWorkout(): Promise<void> {
+  return nativeModule.startWatchWorkout();
+}
+
+/** Re-arms mirrored-session observation and re-reports status; returns the Watch status. */
+export async function reconnectWatch(): Promise<WatchStatus> {
+  return nativeModule.reconnectWatch();
+}
+
 /** Asks a mirrored Apple Watch session to end. No-op when none is active. */
 export async function endWatchWorkout(): Promise<void> {
   return nativeModule.endWatchWorkout();

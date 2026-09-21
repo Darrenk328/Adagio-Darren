@@ -14,6 +14,11 @@ import HealthKit
 /// view model exists purely to start/stop the mirrored session.
 @MainActor
 final class WorkoutMirroringManager: NSObject, ObservableObject {
+    /// One instance for the whole app: the phone-launched path
+    /// (AppDelegate.handle) and the UI (ContentView) must drive the same
+    /// session.
+    static let shared = WorkoutMirroringManager()
+
     @Published private(set) var isActive = false
     @Published private(set) var errorMessage: String?
     /// Cumulative steps this workout, straight from the builder — nil until
@@ -102,11 +107,23 @@ final class WorkoutMirroringManager: NSObject, ObservableObject {
         }
     }
 
-    func start() async {
+    /// `configuration` is the one the phone sent via startWatchApp(with:)
+    /// when launched from there; the Start button passes nothing and gets
+    /// the default outdoor run. Either way it's a no-op if already active,
+    /// so the phone launching an app whose user already tapped Start is
+    /// harmless.
+    func start(configuration incoming: HKWorkoutConfiguration? = nil) async {
         guard session == nil else { return }
-        let configuration = HKWorkoutConfiguration()
-        configuration.activityType = .running
-        configuration.locationType = .outdoor
+        // Authorization is normally granted from the UI's .task, but a
+        // background launch from the phone can beat that — ask here too
+        // (instant no-op when already granted).
+        await requestAuthorization()
+        let configuration = incoming ?? {
+            let c = HKWorkoutConfiguration()
+            c.activityType = .running
+            c.locationType = .outdoor
+            return c
+        }()
 
         do {
             let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)

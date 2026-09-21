@@ -22,8 +22,9 @@ Pod::Spec.new do |s|
 
   s.dependency 'ExpoModulesCore'
 
-  # HealthKit is a system framework — no vendoring needed.
-  s.frameworks = 'HealthKit'
+  # Both system frameworks — no vendoring needed. WatchConnectivity is
+  # only used for the paired / app-installed flags (WatchStatusBridge).
+  s.frameworks = 'HealthKit', 'WatchConnectivity'
 
   s.source_files = 'src/**/*.{h,m,swift}'
 end

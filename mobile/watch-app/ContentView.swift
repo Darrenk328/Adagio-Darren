@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var manager = WorkoutMirroringManager()
+    @ObservedObject private var manager = WorkoutMirroringManager.shared
 
     // MARK: Cadence delta (third column)
 

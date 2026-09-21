@@ -3,7 +3,7 @@ import { useSettings } from '../settings/SettingsContext';
 import * as GarminCadence from '../../modules/garmin-cadence';
 import type { ConnectionStatus, ConnectionStatusEvent, CadenceEvent } from '../../modules/garmin-cadence';
 import * as HealthKitCadence from '../../modules/healthkit-cadence';
-import type { StatusEvent as HealthKitStatusEvent, TargetPaceOptions } from '../../modules/healthkit-cadence';
+import type { StatusEvent as HealthKitStatusEvent, TargetPaceOptions, WatchStatus } from '../../modules/healthkit-cadence';
 
 // The one thing any live-cadence consumer (voice nudges today,
 // potentially the matching engine later) should ever read from — see
@@ -47,6 +47,16 @@ type LiveCadenceState = {
    * show live-vs-target on its own screen. Call with null when the
    * workout ends. No-op for other sources. */
   setTargetCadence: (target: number | null, tolerance: number, options?: TargetPaceOptions) => Promise<void>;
+  /** 'appleWatch' only: paired / app-installed flags, refreshed by
+   * reconnectWatch(); null until first checked or for other sources. */
+  watchStatus: WatchStatus | null;
+  /** 'appleWatch' only: launches the Adagio Watch app into a workout so
+   * the runner doesn't have to start it on the wrist. Rejects when the
+   * Watch can't be reached. No-op for other sources. */
+  startWatchWorkout: () => Promise<void>;
+  /** 'appleWatch' only: re-arms listening for a Watch session and
+   * refreshes watchStatus. Settings' Reconnect button. */
+  reconnectWatch: () => Promise<void>;
   /** Ends the workout on whichever source owns one: stops the iPhone-owned
    * HealthKit session, or asks a mirrored Apple Watch session to end.
    * No-op for Garmin/none (Garmin's connection is ambient, not per-workout). */
@@ -62,6 +72,7 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
   const [currentCadence, setCurrentCadence] = useState<number | null>(null);
   const [currentSteps, setCurrentSteps] = useState<number | null>(null);
   const [currentSpeedMps, setCurrentSpeedMps] = useState<number | null>(null);
+  const [watchStatus, setWatchStatus] = useState<WatchStatus | null>(null);
 
   useEffect(() => {
     if (cadenceSource === 'garmin') {
@@ -120,6 +131,16 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
     setCurrentSpeedMps(null);
   }, [cadenceSource]);
 
+  // Know up front whether there's a Watch with Adagio on it, so Settings
+  // and the workout screen can say something more useful than "Not connected".
+  useEffect(() => {
+    if (cadenceSource !== 'appleWatch') {
+      setWatchStatus(null);
+      return;
+    }
+    HealthKitCadence.getWatchStatus().then(setWatchStatus).catch(() => {});
+  }, [cadenceSource]);
+
   const findDevice = () => {
     if (cadenceSource === 'garmin') {
       GarminCadence.findDevice();
@@ -152,6 +173,18 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
     }
   };
 
+  const startWatchWorkout = async () => {
+    if (cadenceSource === 'appleWatch') {
+      await HealthKitCadence.startWatchWorkout();
+    }
+  };
+
+  const reconnectWatch = async () => {
+    if (cadenceSource === 'appleWatch') {
+      setWatchStatus(await HealthKitCadence.reconnectWatch());
+    }
+  };
+
   const endWorkout = async () => {
     if (cadenceSource === 'healthkit') await HealthKitCadence.stop();
     if (cadenceSource === 'appleWatch') await HealthKitCadence.endWatchWorkout();
@@ -170,6 +203,9 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
         startTracking,
         stopTracking,
         setTargetCadence,
+        watchStatus,
+        startWatchWorkout,
+        reconnectWatch,
         endWorkout,
       }}
     >
