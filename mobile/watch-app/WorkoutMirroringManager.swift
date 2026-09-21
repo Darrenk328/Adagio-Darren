@@ -21,11 +21,16 @@ final class WorkoutMirroringManager: NSObject, ObservableObject {
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
 
+    private let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+
+    // stepCount is in typesToShare too, not just typesToRead: the live
+    // builder *saves* the step samples it collects, so writing them needs
+    // share authorization or enableCollection below quietly yields nothing.
     private var typesToShare: Set<HKSampleType> {
-        [HKObjectType.workoutType()]
+        [HKObjectType.workoutType(), stepType]
     }
     private var typesToRead: Set<HKObjectType> {
-        [HKObjectType.workoutType(), HKQuantityType.quantityType(forIdentifier: .stepCount)!]
+        [HKObjectType.workoutType(), stepType]
     }
 
     func requestAuthorization() async {
@@ -49,7 +54,16 @@ final class WorkoutMirroringManager: NSObject, ObservableObject {
         do {
             let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
             let builder = session.associatedWorkoutBuilder()
-            builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+            let dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+            // A running workout's default data source collects heart rate,
+            // distance, energy, running speed etc. — NOT step count. Steps
+            // have to be opted into explicitly, and the phone derives cadence
+            // from nothing else. Without this line the mirrored session
+            // "works" but never yields a single cadence reading — that was a
+            // real on-device failure ("Not tracking", no numbers), not a
+            // permissions problem.
+            dataSource.enableCollection(for: stepType, predicate: nil)
+            builder.dataSource = dataSource
             session.delegate = self
             builder.delegate = self
 

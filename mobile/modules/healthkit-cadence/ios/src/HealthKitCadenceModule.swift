@@ -124,10 +124,16 @@ public class HealthKitCadenceModule: Module {
             do {
                 let session = try HKWorkoutSession(healthStore: self.healthStore, configuration: configuration)
                 let builder = session.associatedWorkoutBuilder()
-                builder.dataSource = HKLiveWorkoutDataSource(
+                let dataSource = HKLiveWorkoutDataSource(
                     healthStore: self.healthStore,
                     workoutConfiguration: configuration
                 )
+                // A running workout's default data source does NOT collect
+                // step count — it has to be opted into explicitly, and
+                // ingestStepStatistics gets nothing otherwise. Same fix as
+                // the Watch app's WorkoutMirroringManager; found on device.
+                dataSource.enableCollection(for: self.stepType, predicate: nil)
+                builder.dataSource = dataSource
 
                 session.delegate = handler
                 builder.delegate = handler
