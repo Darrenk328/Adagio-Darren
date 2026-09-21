@@ -47,6 +47,10 @@ type LiveCadenceState = {
    * show live-vs-target on its own screen. Call with null when the
    * workout ends. No-op for other sources. */
   setTargetCadence: (target: number | null, tolerance: number, options?: TargetPaceOptions) => Promise<void>;
+  /** Ends the workout on whichever source owns one: stops the iPhone-owned
+   * HealthKit session, or asks a mirrored Apple Watch session to end.
+   * No-op for Garmin/none (Garmin's connection is ambient, not per-workout). */
+  endWorkout: () => Promise<void>;
 };
 
 const LiveCadenceContext = createContext<LiveCadenceState | undefined>(undefined);
@@ -148,6 +152,11 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
     }
   };
 
+  const endWorkout = async () => {
+    if (cadenceSource === 'healthkit') await HealthKitCadence.stop();
+    if (cadenceSource === 'appleWatch') await HealthKitCadence.endWatchWorkout();
+  };
+
   return (
     <LiveCadenceContext.Provider
       value={{
@@ -161,6 +170,7 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
         startTracking,
         stopTracking,
         setTargetCadence,
+        endWorkout,
       }}
     >
       {children}

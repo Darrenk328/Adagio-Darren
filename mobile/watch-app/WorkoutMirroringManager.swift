@@ -259,6 +259,13 @@ extension WorkoutMirroringManager: HKWorkoutSessionDelegate {
     nonisolated func workoutSession(_ workoutSession: HKWorkoutSession, didReceiveDataFromRemoteWorkoutSession data: [Data]) {
         for item in data {
             guard let payload = try? JSONSerialization.jsonObject(with: item) as? [String: Any] else { continue }
+            // "End workout" on the phone ends the Watch session too — the
+            // phone can't end a mirrored session directly (Apple: the Watch
+            // owns it), so it asks.
+            if payload["command"] as? String == "stop" {
+                Task { @MainActor in self.stop() }
+                continue
+            }
             let target = payload["target"] as? Int
             let tolerance = payload["tolerance"] as? Int
             let paceUnit = payload["paceUnit"] as? String

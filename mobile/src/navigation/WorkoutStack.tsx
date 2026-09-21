@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import type { MatchedTrack } from '../api/client';
 import type { MusicSource } from '../auth/AuthContext';
+import type { CadenceSource } from '../settings/SettingsContext';
 import type { Segment } from '../types/workout';
 import type { PaceUnit } from '../utils/paceToCadence';
 
@@ -11,6 +12,7 @@ import PlaylistTracksScreen from '../screens/PlaylistTracksScreen';
 import WorkoutSetupScreen from '../screens/WorkoutSetupScreen';
 import ResultsScreen from '../screens/ResultsScreen';
 import NowPlayingScreen from '../screens/NowPlayingScreen';
+import WorkoutSummaryScreen from '../screens/WorkoutSummaryScreen';
 
 export type WorkoutStackParamList = {
   PlaylistPicker: undefined;
@@ -47,6 +49,34 @@ export type WorkoutStackParamList = {
     paceUnit?: PaceUnit;
     targetPaceSeconds?: number;
   };
+  WorkoutSummary: WorkoutSummaryParams;
+};
+
+/** One live-cadence reading captured during the workout, for the summary. */
+export type CadenceSample = {
+  /** Seconds since the workout started. */
+  t: number;
+  cadence: number;
+  /** Apple Watch only. */
+  speedMps?: number;
+  steps?: number;
+};
+
+export type PlayedSong = { id: string; title: string; artist: string };
+
+export type WorkoutSummaryParams = {
+  playlistName: string;
+  durationSec: number;
+  cadenceSource: CadenceSource;
+  unit: string;
+  tolerance: number;
+  /** Single-target workouts; interval workouts report per-segment targets instead. */
+  targetCadence?: number;
+  segments?: Segment[];
+  paceUnit: PaceUnit;
+  targetPaceSeconds?: number;
+  samples: CadenceSample[];
+  songs: PlayedSong[];
 };
 
 const Stack = createNativeStackNavigator<WorkoutStackParamList>();
@@ -59,6 +89,13 @@ export default function WorkoutStack() {
       <Stack.Screen name="WorkoutSetup" component={WorkoutSetupScreen} options={{ title: 'Set up workout' }} />
       <Stack.Screen name="Results" component={ResultsScreen} options={{ title: 'Matches' }} />
       <Stack.Screen name="NowPlaying" component={NowPlayingScreen} options={{ title: 'Now Playing' }} />
+      <Stack.Screen
+        name="WorkoutSummary"
+        component={WorkoutSummaryScreen}
+        // No back button: the workout it came from has been ended and
+        // replaced; "Done" at the bottom returns to the playlist picker.
+        options={{ title: 'Workout Summary', headerBackVisible: false, gestureEnabled: false }}
+      />
     </Stack.Navigator>
   );
 }

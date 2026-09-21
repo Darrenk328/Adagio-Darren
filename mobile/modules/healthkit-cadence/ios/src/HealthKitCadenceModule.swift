@@ -175,6 +175,16 @@ public class HealthKitCadenceModule: Module {
             await self.pushTargetToWatch()
         }
 
+        // Asks a mirrored Watch session to end (the Watch owns it and does
+        // the actual ending; the phone just tears down when the state
+        // change arrives). No-op when no mirrored session is active.
+        AsyncFunction("endWatchWorkout") { () -> Void in
+            guard #available(iOS 26.0, *) else { return }
+            guard self.isMirroredFromWatch, let session = self.session as? HKWorkoutSession else { return }
+            guard let data = try? JSONSerialization.data(withJSONObject: ["command": "stop"]) else { return }
+            try? await session.sendToRemoteWorkoutSession(data: data)
+        }
+
         // Only meaningful for the 'healthkit' (iPhone-owned) path — JS
         // never calls this for 'appleWatch' sessions, since the Watch (not
         // the phone) controls when a mirrored workout starts and stops.

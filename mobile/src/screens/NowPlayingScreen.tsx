@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { View, Text, Pressable, StyleSheet, Image, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Image, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
@@ -21,14 +21,14 @@ import {
   MatchedTrack,
 } from '../api/client';
 import * as AppleMusic from '../../modules/apple-music';
-import type { WorkoutStackParamList } from '../navigation/WorkoutStack';
+import type { WorkoutStackParamList, CadenceSample, PlayedSong } from '../navigation/WorkoutStack';
 import type { PaceUnit } from '../utils/paceToCadence';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'NowPlaying'>;
 
 type DeviceStatus = 'checking' | 'ready' | 'no-device' | 'error';
 
-export default function NowPlayingScreen({ route }: Props) {
+export default function NowPlayingScreen({ route, navigation }: Props) {
   const { playlistId, playlistName, musicSource, segments, unit, targetCadence, paceUnit, targetPaceSeconds } =
     route.params;
   const { accessToken } = useAuth();
@@ -39,6 +39,7 @@ export default function NowPlayingScreen({ route }: Props) {
     startTracking,
     stopTracking,
     setTargetCadence,
+    endWorkout: endCadenceWorkout,
     connectionStatus,
     currentCadence,
     currentSteps,
@@ -81,6 +82,39 @@ export default function NowPlayingScreen({ route }: Props) {
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
+  // Everything the summary screen is built from, recorded as it happens.
+  // Refs, not state: these grow every second and nothing renders them.
+  const samplesRef = useRef<CadenceSample[]>([]);
+  const songsRef = useRef<PlayedSong[]>([]);
+  const elapsedRef = useRef(0);
+  useEffect(() => {
+    elapsedRef.current = elapsedSec;
+  }, [elapsedSec]);
+
+  // One sample per live-cadence update while the workout is actually
+  // running (not paused, not before playback started), stamped with the
+  // workout clock. Watch extras ride along when present.
+  useEffect(() => {
+    if (currentCadence == null || !isPlaying || deviceStatus !== 'ready') return;
+    samplesRef.current.push({
+      t: elapsedRef.current,
+      cadence: currentCadence,
+      ...(currentSpeedMps != null ? { speedMps: currentSpeedMps } : {}),
+      ...(currentSteps != null ? { steps: currentSteps } : {}),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentCadence, currentSpeedMps, currentSteps]);
+
+  // Songs in the order they actually played — a new entry whenever the
+  // current track changes (skip, or a segment swapping the queue), not
+  // the matched queue as planned.
+  useEffect(() => {
+    if (!currentTrack || deviceStatus !== 'ready') return;
+    const last = songsRef.current[songsRef.current.length - 1];
+    if (last?.id === currentTrack.id) return;
+    songsRef.current.push({ id: currentTrack.id, title: currentTrack.title, artist: currentTrack.artist });
+  }, [currentTrack, deviceStatus]);
 
   // Publish a minimal "workout in progress" signal for the persistent
   // banner shown on other tabs — only while there's actually something
@@ -267,6 +301,46 @@ export default function NowPlayingScreen({ route }: Props) {
     }
   }, [segmentIndex, segments, transitionToSegment]);
 
+  const finishWorkout = async () => {
+    setIsBusy(true);
+    try {
+      // Stop the music; failures here shouldn't stop the summary from showing.
+      if (isPlaying) {
+        if (isAppleMusic) AppleMusic.pause();
+        else if (accessToken) await pausePlayback(accessToken).catch(() => {});
+      }
+      setIsPlaying(false);
+      // Ends the iPhone-owned HealthKit session or asks the Watch to end
+      // its own — no-op for Garmin, whose connection isn't per-workout.
+      await endCadenceWorkout().catch((err) => console.error('[NowPlayingScreen] endWorkout failed:', err));
+    } finally {
+      setIsBusy(false);
+    }
+
+    // replace, not navigate: this workout is over, so there's nothing to
+    // come "back" to. Done on the summary pops to the playlist picker.
+    navigation.replace('WorkoutSummary', {
+      playlistName,
+      durationSec: elapsedRef.current,
+      cadenceSource,
+      unit: unit ?? 'spm',
+      tolerance: defaultTolerance,
+      targetCadence,
+      segments,
+      paceUnit: paceUnit ?? 'mi',
+      targetPaceSeconds: isSingleTarget ? targetPaceSeconds : undefined,
+      samples: samplesRef.current,
+      songs: songsRef.current,
+    });
+  };
+
+  const confirmEndWorkout = () => {
+    Alert.alert('End workout?', 'Playback will stop and you’ll see your summary.', [
+      { text: 'Keep going', style: 'cancel' },
+      { text: 'End workout', style: 'destructive', onPress: () => void finishWorkout() },
+    ]);
+  };
+
   const togglePause = async () => {
     if (!isAppleMusic && !accessToken) return;
     if (isBusy) return;
@@ -348,69 +422,91 @@ export default function NowPlayingScreen({ route }: Props) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.playlistName}>{playlistName}</Text>
-
-      {currentTrack?.albumArtUrl ? (
-        <Image source={{ uri: currentTrack.albumArtUrl }} style={styles.art} />
-      ) : (
-        <View style={[styles.art, styles.artPlaceholder]} />
-      )}
-      <Text style={styles.trackTitle}>{currentTrack?.title}</Text>
-      <Text style={styles.trackArtist}>{currentTrack?.artist}</Text>
-
-      {segments && segments.length > 0 && (
-        <View style={styles.segmentCard}>
-          {segmentsComplete ? (
-            <Text style={styles.segmentComplete}>Workout complete 🎉</Text>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Compact now-playing header: art beside the text instead of a
+            200pt square above it, so the segment and cadence cards fit
+            without pushing the controls off-screen. */}
+        <View style={styles.nowPlayingRow}>
+          {currentTrack?.albumArtUrl ? (
+            <Image source={{ uri: currentTrack.albumArtUrl }} style={styles.art} />
           ) : (
-            <>
-              <Text style={styles.segmentLabel}>
-                Segment {segmentIndex + 1} of {segments.length} · {currentSegment?.label}
-              </Text>
-              <Text style={styles.segmentCountdown}>{formatDuration(segmentRemainingSec)}</Text>
-              <Text style={styles.segmentTarget}>
-                Target: {currentSegment?.target} {unit ?? ''}
-              </Text>
-              {isSwitchingSegment && (
-                <View style={styles.switchingRow}>
-                  <ActivityIndicator size="small" color={colors.textMuted} />
-                  <Text style={styles.switchingText}>Finding songs for this segment…</Text>
-                </View>
-              )}
-              {transitionNotice && !isSwitchingSegment && (
-                <Text style={styles.transitionNotice}>{transitionNotice}</Text>
-              )}
-            </>
+            <View style={[styles.art, styles.artPlaceholder]} />
           )}
+          <View style={styles.nowPlayingText}>
+            <Text style={styles.playlistName} numberOfLines={1}>
+              {playlistName}
+            </Text>
+            <Text style={styles.trackTitle} numberOfLines={2}>
+              {currentTrack?.title}
+            </Text>
+            <Text style={styles.trackArtist} numberOfLines={1}>
+              {currentTrack?.artist}
+            </Text>
+          </View>
         </View>
-      )}
 
-      {cadenceSource !== 'none' && (
-        <LiveCadenceCard
-          cadenceSource={cadenceSource}
-          deviceName={deviceName}
-          connectionStatus={connectionStatus}
-          currentCadence={currentCadence}
-          targetCadence={activeTargetCadence}
-          tolerance={defaultTolerance}
-          unit={unit ?? 'spm'}
-          steps={currentSteps}
-          speedMps={currentSpeedMps}
-          paceUnit={paceUnit ?? 'mi'}
-          targetPaceSeconds={isSingleTarget ? targetPaceSeconds : undefined}
-        />
-      )}
+        {segments && segments.length > 0 && (
+          <View style={styles.segmentCard}>
+            {segmentsComplete ? (
+              <Text style={styles.segmentComplete}>Workout complete 🎉</Text>
+            ) : (
+              <>
+                <Text style={styles.segmentLabel}>
+                  Segment {segmentIndex + 1} of {segments.length} · {currentSegment?.label}
+                </Text>
+                <Text style={styles.segmentCountdown}>{formatDuration(segmentRemainingSec)}</Text>
+                <Text style={styles.segmentTarget}>
+                  Target: {currentSegment?.target} {unit ?? ''}
+                </Text>
+                {isSwitchingSegment && (
+                  <View style={styles.switchingRow}>
+                    <ActivityIndicator size="small" color={colors.textMuted} />
+                    <Text style={styles.switchingText}>Finding songs for this segment…</Text>
+                  </View>
+                )}
+                {transitionNotice && !isSwitchingSegment && (
+                  <Text style={styles.transitionNotice}>{transitionNotice}</Text>
+                )}
+              </>
+            )}
+          </View>
+        )}
 
-      <Text style={styles.elapsedLabel}>Elapsed</Text>
-      <Text style={styles.elapsedTime}>{formatDuration(elapsedSec)}</Text>
+        {cadenceSource !== 'none' && (
+          <LiveCadenceCard
+            cadenceSource={cadenceSource}
+            deviceName={deviceName}
+            connectionStatus={connectionStatus}
+            currentCadence={currentCadence}
+            targetCadence={activeTargetCadence}
+            tolerance={defaultTolerance}
+            unit={unit ?? 'spm'}
+            steps={currentSteps}
+            speedMps={currentSpeedMps}
+            paceUnit={paceUnit ?? 'mi'}
+            targetPaceSeconds={isSingleTarget ? targetPaceSeconds : undefined}
+          />
+        )}
+      </ScrollView>
 
-      <View style={styles.controls}>
-        <Pressable style={styles.pauseButton} onPress={togglePause} disabled={isBusy}>
-          <Ionicons name={isPlaying ? 'pause' : 'play'} size={32} color={colors.primaryText} />
-        </Pressable>
-        <Pressable style={styles.skipButton} onPress={handleSkip} disabled={isBusy}>
-          <Ionicons name="play-skip-forward" size={26} color={colors.text} />
-        </Pressable>
+      {/* Pinned footer: elapsed + transport + end. Never scrolls away. */}
+      <View style={styles.footer}>
+        <View style={styles.elapsedBlock}>
+          <Text style={styles.elapsedLabel}>Elapsed</Text>
+          <Text style={styles.elapsedTime}>{formatDuration(elapsedSec)}</Text>
+        </View>
+        <View style={styles.controls}>
+          <Pressable style={styles.skipButton} onPress={handleSkip} disabled={isBusy}>
+            <Ionicons name="play-skip-forward" size={24} color={colors.text} />
+          </Pressable>
+          <Pressable style={styles.pauseButton} onPress={togglePause} disabled={isBusy}>
+            <Ionicons name={isPlaying ? 'pause' : 'play'} size={30} color={colors.primaryText} />
+          </Pressable>
+          <Pressable style={styles.endButton} onPress={confirmEndWorkout} disabled={isBusy}>
+            <Ionicons name="stop" size={22} color="#D64545" />
+          </Pressable>
+        </View>
+        <Text style={styles.endHint}>Stop ends the workout and shows your summary</Text>
       </View>
     </View>
   );
@@ -568,7 +664,10 @@ function LiveCadenceCard({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, padding: 24, alignItems: 'center' },
+  container: { flex: 1, backgroundColor: colors.background },
+  scrollContent: { padding: 20, paddingBottom: 12 },
+  nowPlayingRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  nowPlayingText: { flex: 1, minWidth: 0 },
   cadenceCard: {
     width: '100%',
     backgroundColor: colors.surface,
@@ -576,7 +675,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 14,
     padding: 14,
-    marginTop: 16,
+    marginTop: 14,
   },
   cadenceHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cadenceSource: { fontSize: 13, fontWeight: '600', color: colors.text },
@@ -603,11 +702,11 @@ const styles = StyleSheet.create({
   loadingText: { color: colors.textMuted, marginTop: 12 },
   noDeviceTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginTop: 16, textAlign: 'center' },
   noDeviceBody: { fontSize: 14, color: colors.textMuted, marginTop: 8, textAlign: 'center', lineHeight: 20 },
-  playlistName: { fontSize: 14, color: colors.textMuted, marginTop: 8 },
-  art: { width: 200, height: 200, borderRadius: 12, marginTop: 20, backgroundColor: colors.border },
+  playlistName: { fontSize: 12, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.4 },
+  art: { width: 84, height: 84, borderRadius: 10, backgroundColor: colors.border },
   artPlaceholder: {},
-  trackTitle: { fontSize: 20, fontWeight: '700', color: colors.text, marginTop: 16, textAlign: 'center' },
-  trackArtist: { fontSize: 15, color: colors.textMuted, marginTop: 4 },
+  trackTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginTop: 2 },
+  trackArtist: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
   segmentCard: {
     width: '100%',
     backgroundColor: colors.surface,
@@ -615,7 +714,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 14,
     padding: 16,
-    marginTop: 24,
+    marginTop: 16,
     alignItems: 'center',
   },
   segmentLabel: { fontSize: 13, color: colors.textMuted, fontWeight: '600' },
@@ -625,25 +724,45 @@ const styles = StyleSheet.create({
   switchingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
   switchingText: { fontSize: 12, color: colors.textMuted },
   transitionNotice: { fontSize: 12, color: colors.textMuted, marginTop: 10, textAlign: 'center', lineHeight: 17 },
-  elapsedLabel: { fontSize: 12, color: colors.textMuted, marginTop: 28, textTransform: 'uppercase', letterSpacing: 0.5 },
-  elapsedTime: { fontSize: 22, fontWeight: '600', color: colors.text, marginTop: 2 },
-  controls: { flexDirection: 'row', alignItems: 'center', marginTop: 'auto', gap: 24, paddingBottom: 16 },
+  footer: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 24,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+  },
+  elapsedBlock: { alignItems: 'center', marginBottom: 8 },
+  elapsedLabel: { fontSize: 11, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  elapsedTime: { fontSize: 22, fontWeight: '600', color: colors.text, marginTop: 1, fontVariant: ['tabular-nums'] },
+  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 22 },
   pauseButton: {
     backgroundColor: colors.primary,
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     alignItems: 'center',
     justifyContent: 'center',
   },
   skipButton: {
     backgroundColor: colors.border,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  endButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 2,
+    borderColor: '#D64545',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  endHint: { fontSize: 11, color: colors.textMuted, marginTop: 8 },
   button: {
     backgroundColor: colors.secondary,
     paddingVertical: 14,

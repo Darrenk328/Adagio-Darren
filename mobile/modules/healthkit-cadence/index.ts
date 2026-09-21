@@ -60,6 +60,11 @@ export async function setTargetCadence(
   return nativeModule.setTargetCadence(target, tolerance, options.paceUnit ?? null, options.targetPaceSeconds ?? null);
 }
 
+/** Asks a mirrored Apple Watch session to end. No-op when none is active. */
+export async function endWatchWorkout(): Promise<void> {
+  return nativeModule.endWatchWorkout();
+}
+
 export function addStatusListener(listener: (event: StatusEvent) => void): Subscription {
   return emitter.addListener('onStatusChanged', listener);
 }
