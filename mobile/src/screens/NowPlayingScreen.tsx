@@ -21,7 +21,8 @@ import {
   MatchedTrack,
 } from '../api/client';
 import * as AppleMusic from '../../modules/apple-music';
-import type { WorkoutStackParamList, CadenceSample, PlayedSong } from '../navigation/WorkoutStack';
+import type { WorkoutStackParamList, CadenceSample, PlayedSong, WorkoutSummaryParams } from '../navigation/WorkoutStack';
+import { useWorkoutHistory } from '../workout/WorkoutHistoryContext';
 import type { PaceUnit } from '../utils/paceToCadence';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'NowPlaying'>;
@@ -85,6 +86,7 @@ export default function NowPlayingScreen({ route, navigation }: Props) {
 
   // Everything the summary screen is built from, recorded as it happens.
   // Refs, not state: these grow every second and nothing renders them.
+  const { addWorkout } = useWorkoutHistory();
   const samplesRef = useRef<CadenceSample[]>([]);
   const songsRef = useRef<PlayedSong[]>([]);
   const elapsedRef = useRef(0);
@@ -317,9 +319,7 @@ export default function NowPlayingScreen({ route, navigation }: Props) {
       setIsBusy(false);
     }
 
-    // replace, not navigate: this workout is over, so there's nothing to
-    // come "back" to. Done on the summary pops to the playlist picker.
-    navigation.replace('WorkoutSummary', {
+    const summary: WorkoutSummaryParams = {
       playlistName,
       durationSec: elapsedRef.current,
       cadenceSource,
@@ -331,7 +331,14 @@ export default function NowPlayingScreen({ route, navigation }: Props) {
       targetPaceSeconds: isSingleTarget ? targetPaceSeconds : undefined,
       samples: samplesRef.current,
       songs: songsRef.current,
-    });
+    };
+    // Saved first so it's on Home's Recent list even if the user backs
+    // out of the summary immediately.
+    await addWorkout(summary).catch((err) => console.error('[NowPlayingScreen] addWorkout failed:', err));
+
+    // replace, not navigate: this workout is over, so there's nothing to
+    // come "back" to. Done on the summary pops to the playlist picker.
+    navigation.replace('WorkoutSummary', summary);
   };
 
   const confirmEndWorkout = () => {

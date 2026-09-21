@@ -49,7 +49,9 @@ export type WorkoutStackParamList = {
     paceUnit?: PaceUnit;
     targetPaceSeconds?: number;
   };
-  WorkoutSummary: WorkoutSummaryParams;
+  // Shown right after a workout ends (no back button, Done → picker) or
+  // re-opened from Home's Recent list (fromHistory: back button, Done → Home).
+  WorkoutSummary: WorkoutSummaryParams & { fromHistory?: boolean };
 };
 
 /** One live-cadence reading captured during the workout, for the summary. */

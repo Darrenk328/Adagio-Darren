@@ -2,16 +2,17 @@ import React from 'react';
 import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator, BottomTabBar } from '@react-navigation/bottom-tabs';
+import type { NavigatorScreenParams } from '@react-navigation/native';
 import { colors } from '../theme/colors';
 import WorkoutBanner from '../workout/WorkoutBanner';
 
 import HomeScreen from '../screens/HomeScreen';
-import WorkoutStack from './WorkoutStack';
+import WorkoutStack, { type WorkoutStackParamList } from './WorkoutStack';
 import SettingsScreen from '../screens/SettingsScreen';
 
 export type MainTabParamList = {
   Home: undefined;
-  Workout: undefined;
+  Workout: NavigatorScreenParams<WorkoutStackParamList> | undefined;
   Settings: undefined;
 };
 

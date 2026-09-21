@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useLayoutEffect, useMemo } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
@@ -75,7 +75,21 @@ export default function WorkoutSummaryScreen({ route, navigation }: Props) {
     targetPaceSeconds,
     samples,
     songs,
+    fromHistory,
   } = route.params;
+
+  // Re-opened from Home: behave like a normal detail page (back button,
+  // swipe back) instead of the locked post-workout screen.
+  useLayoutEffect(() => {
+    if (!fromHistory) return;
+    navigation.setOptions({ title: 'Workout', headerBackVisible: true, gestureEnabled: true });
+  }, [fromHistory, navigation]);
+
+  const handleDone = () => {
+    navigation.popToTop();
+    // Opened from Home → return there rather than to the playlist picker.
+    if (fromHistory) navigation.getParent()?.navigate('Home');
+  };
 
   const stats = useMemo(
     () => summarize(samples, targetCadence, tolerance, paceUnit),
@@ -88,7 +102,7 @@ export default function WorkoutSummaryScreen({ route, navigation }: Props) {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>Workout complete</Text>
+        <Text style={styles.title}>{fromHistory ? 'Workout' : 'Workout complete'}</Text>
         <Text style={styles.subtitle}>{playlistName}</Text>
 
         {/* Headline numbers */}
@@ -179,7 +193,7 @@ export default function WorkoutSummaryScreen({ route, navigation }: Props) {
       </ScrollView>
 
       <View style={styles.footer}>
-        <Pressable style={styles.doneButton} onPress={() => navigation.popToTop()}>
+        <Pressable style={styles.doneButton} onPress={handleDone}>
           <Text style={styles.doneButtonText}>Done</Text>
         </Pressable>
       </View>
