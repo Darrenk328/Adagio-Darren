@@ -15,8 +15,8 @@ router.post('/', async (req, res, next) => {
   try {
     const { tracks, cadence, tolerance } = req.body;
 
-    // TEMP DIAGNOSTIC — tracing whether /match is even reached, and with
-    // what shape of data, while chasing "cannot load matching songs".
+    // One line per request so BPM-coverage problems ("no matches") can be
+    // diagnosed from the server log alone.
     console.log(
       `[match] request received: ${Array.isArray(tracks) ? tracks.length : typeof tracks} tracks, ` +
         `cadence=${cadence}, tolerance=${tolerance}`,
