@@ -16,10 +16,23 @@ import HealthKit
 final class WorkoutMirroringManager: NSObject, ObservableObject {
     @Published private(set) var isActive = false
     @Published private(set) var errorMessage: String?
+    /// Cumulative steps this workout, straight from the builder — nil until
+    /// the first step sample arrives. Shown on the Watch so "is the Watch
+    /// collecting steps at all?" can be answered independently of whether
+    /// mirroring is delivering anything to the phone.
+    @Published private(set) var totalSteps: Int?
+    /// Steps/min derived the same way the phone does it (rolling 10 s
+    /// window, EMA-smoothed) — a local sanity check against the phone's number.
+    @Published private(set) var cadence: Int?
 
     private let healthStore = HKHealthStore()
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
+
+    private var stepSamples: [(date: Date, steps: Double)] = []
+    private let windowDuration: TimeInterval = 10
+    private var smoothedSPM: Double?
+    private let emaAlpha: Double = 0.3
 
     private let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
 
@@ -113,7 +126,64 @@ final class WorkoutMirroringManager: NSObject, ObservableObject {
         session = nil
         builder = nil
         isActive = false
+        stepSamples.removeAll()
+        smoothedSPM = nil
+        // Leave totalSteps/cadence showing their last values after a stop —
+        // useful to see that *something* was collected during the run.
     }
+
+    /// Mirrors HealthKitCadenceModule.ingestStepStatistics on the phone.
+    fileprivate func ingestStepStatistics(_ statistics: HKStatistics?) {
+        guard let statistics, let cumulative = statistics.sumQuantity()?.doubleValue(for: .count()) else { return }
+        totalSteps = Int(cumulative)
+
+        let now = Date()
+        stepSamples.append((date: now, steps: cumulative))
+        stepSamples.removeAll { now.timeIntervalSince($0.date) > windowDuration }
+        guard let oldest = stepSamples.first, stepSamples.count >= 2 else { return }
+
+        let span = now.timeIntervalSince(oldest.date)
+        let deltaSteps = cumulative - oldest.steps
+        guard span > 0, deltaSteps >= 0 else { return }
+
+        let instantaneous = deltaSteps / (span / 60.0)
+        let smoothed = smoothedSPM.map { $0 + emaAlpha * (instantaneous - $0) } ?? instantaneous
+        smoothedSPM = smoothed
+        let rounded = Int(smoothed.rounded())
+        cadence = rounded
+        sendToPhone(cadence: rounded, steps: Int(cumulative))
+    }
+
+    private var lastSendDate = Date.distantPast
+
+    /// The actual data path to the phone. A mirrored session's builder only
+    /// collects on the Watch — the iPhone side does NOT get builder
+    /// callbacks for it (this is how Apple's own multi-device workout
+    /// sample works too: the Watch sends, the phone receives via
+    /// workoutSession(_:didReceiveDataFromRemoteWorkoutSession:)). The
+    /// first version of this app relied on the phone reading the mirrored
+    /// builder, and the phone never saw a single reading.
+    private func sendToPhone(cadence: Int, steps: Int) {
+        guard let session else { return }
+        // Builder callbacks can be frequent; once a second is plenty.
+        let now = Date()
+        guard now.timeIntervalSince(lastSendDate) >= 1 else { return }
+        lastSendDate = now
+
+        let payload: [String: Int] = ["cadence": cadence, "steps": steps]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        Task {
+            do {
+                try await session.sendToRemoteWorkoutSession(data: data)
+                lastSendError = nil
+            } catch {
+                lastSendError = error.localizedDescription
+            }
+        }
+    }
+
+    /// Surfaced on the Watch screen so a failing send is visible there.
+    @Published private(set) var lastSendError: String?
 }
 
 extension WorkoutMirroringManager: HKWorkoutSessionDelegate {
@@ -137,8 +207,10 @@ extension WorkoutMirroringManager: HKWorkoutSessionDelegate {
 
 extension WorkoutMirroringManager: HKLiveWorkoutBuilderDelegate {
     nonisolated func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder, didCollectDataOf collectedTypes: Set<HKSampleType>) {
-        // No on-watch cadence display needed — the phone reads this via
-        // the mirrored session's own builder statistics on its side.
+        let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+        guard collectedTypes.contains(stepType) else { return }
+        let statistics = workoutBuilder.statistics(for: stepType)
+        Task { @MainActor in self.ingestStepStatistics(statistics) }
     }
 
     nonisolated func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}

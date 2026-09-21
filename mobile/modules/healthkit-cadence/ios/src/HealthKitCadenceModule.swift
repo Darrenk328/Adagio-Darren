@@ -235,6 +235,21 @@ public class HealthKitCadenceModule: Module {
         handler.onStepStatistics = { [weak self] statistics in
             self?.ingestStepStatistics(statistics)
         }
+        // The path that actually carries cadence for a mirrored (Watch)
+        // session. The Watch computes cadence from its own builder and
+        // sends {"cadence": Int, "steps": Int} about once a second; the
+        // iPhone side's builder never delivers step statistics for a
+        // mirrored session (confirmed on device — onStepStatistics above
+        // only ever fires for the iPhone-owned 'healthkit' path).
+        handler.onRemoteData = { [weak self] datas in
+            guard let self else { return }
+            for data in datas {
+                guard let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let cadence = payload["cadence"] as? Int
+                else { continue }
+                self.sendEvent("onCadenceReceived", ["cadence": cadence])
+            }
+        }
         return handler
     }
 

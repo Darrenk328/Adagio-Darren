@@ -20,6 +20,9 @@ final class HealthKitCadenceDelegateHandler: NSObject {
     var onStateChanged: ((HKWorkoutSessionState) -> Void)?
     var onStepStatistics: ((HKStatistics?) -> Void)?
     var onError: ((Error) -> Void)?
+    /// Data the Watch pushes with sendToRemoteWorkoutSession — the real
+    /// channel for a mirrored session (see HealthKitCadenceModule.adopt).
+    var onRemoteData: (([Data]) -> Void)?
 
     private let stepType = HKQuantityType(.stepCount)
 }
@@ -37,6 +40,10 @@ extension HealthKitCadenceDelegateHandler: HKWorkoutSessionDelegate {
 
     func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
         onError?(error)
+    }
+
+    func workoutSession(_ workoutSession: HKWorkoutSession, didReceiveDataFromRemoteWorkoutSession data: [Data]) {
+        onRemoteData?(data)
     }
 }
 
