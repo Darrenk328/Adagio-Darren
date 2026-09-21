@@ -153,10 +153,20 @@ final class WorkoutMirroringManager: NSObject, ObservableObject {
     }
 
     func stop() {
-        guard let session, let builder else { return }
+        guard let session else { return }
         session.end()
-        builder.endCollection(withEnd: Date()) { _, error in
-            builder.finishWorkout { _, error in
+        finishBuilderAndTeardown()
+    }
+
+    /// Ends collection, saves the workout to Health, and clears state.
+    /// Shared by the Stop button, the phone's "stop" message, and a
+    /// session the phone ended directly (arrives as .ended below) — the
+    /// builder is nil'd first so whichever path runs second is a no-op.
+    private func finishBuilderAndTeardown() {
+        let builder = self.builder
+        self.builder = nil
+        builder?.endCollection(withEnd: Date()) { _, _ in
+            builder?.finishWorkout { _, error in
                 if let error {
                     Task { @MainActor in self.errorMessage = error.localizedDescription }
                 }
@@ -242,7 +252,10 @@ extension WorkoutMirroringManager: HKWorkoutSessionDelegate {
         date: Date
     ) {
         guard toState == .ended || toState == .stopped else { return }
-        Task { @MainActor in self.teardown() }
+        // Covers the phone ending the mirrored session from its side (End
+        // Workout in Adagio) as well as the system ending it: still save
+        // what was collected rather than just dropping the builder.
+        Task { @MainActor in self.finishBuilderAndTeardown() }
     }
 
     nonisolated func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {

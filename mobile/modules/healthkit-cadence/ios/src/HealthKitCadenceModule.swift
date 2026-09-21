@@ -181,8 +181,26 @@ public class HealthKitCadenceModule: Module {
         AsyncFunction("endWatchWorkout") { () -> Void in
             guard #available(iOS 26.0, *) else { return }
             guard self.isMirroredFromWatch, let session = self.session as? HKWorkoutSession else { return }
-            guard let data = try? JSONSerialization.data(withJSONObject: ["command": "stop"]) else { return }
-            try? await session.sendToRemoteWorkoutSession(data: data)
+
+            // Two independent paths so the Watch ends even if one is lost:
+            // 1. an explicit "stop" message the Watch app acts on, and
+            // 2. ending the mirrored session from this side — HealthKit
+            //    forwards the state change to the Watch, whose delegate
+            //    finishes the workout on .ended. The message is sent first
+            //    because a session that's already ended can't send data.
+            if let data = try? JSONSerialization.data(withJSONObject: ["command": "stop"]) {
+                do {
+                    try await session.sendToRemoteWorkoutSession(data: data)
+                } catch {
+                    NSLog("[HealthKitCadence] stop message to Watch failed: %@", error.localizedDescription)
+                }
+            }
+            switch session.state {
+            case .running, .paused, .prepared:
+                session.end()
+            default:
+                break
+            }
         }
 
         // Only meaningful for the 'healthkit' (iPhone-owned) path — JS
