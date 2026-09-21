@@ -4,6 +4,7 @@ import { colors } from '../theme/colors';
 import type { MatchedTrack } from '../api/client';
 import type { MusicSource } from '../auth/AuthContext';
 import type { Segment } from '../types/workout';
+import type { PaceUnit } from '../utils/paceToCadence';
 
 import PlaylistPickerScreen from '../screens/PlaylistPickerScreen';
 import PlaylistTracksScreen from '../screens/PlaylistTracksScreen';
@@ -25,6 +26,12 @@ export type WorkoutStackParamList = {
     cadence: number;
     tolerance: number;
     unit: string;
+    // The runner's chosen distance unit (mi/km) — running only. Carried
+    // through so the Apple Watch can show pace in the unit they picked.
+    paceUnit?: PaceUnit;
+    // Only set when the workout was set up "By pace" rather than by
+    // cadence: the pace they actually typed, in seconds per paceUnit.
+    targetPaceSeconds?: number;
   };
   NowPlaying: {
     playlistId: string;
@@ -36,6 +43,9 @@ export type WorkoutStackParamList = {
     // Single-target workouts only — interval workouts get their target
     // from the current segment instead. Used for voice coaching nudges.
     targetCadence?: number;
+    // See Results — forwarded to the Apple Watch's on-wrist readout.
+    paceUnit?: PaceUnit;
+    targetPaceSeconds?: number;
   };
 };
 

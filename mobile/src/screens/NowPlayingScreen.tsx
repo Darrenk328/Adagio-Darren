@@ -28,12 +28,14 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'NowPlaying'>;
 type DeviceStatus = 'checking' | 'ready' | 'no-device' | 'error';
 
 export default function NowPlayingScreen({ route }: Props) {
-  const { playlistId, playlistName, musicSource, segments, unit, targetCadence } = route.params;
+  const { playlistId, playlistName, musicSource, segments, unit, targetCadence, paceUnit, targetPaceSeconds } =
+    route.params;
   const { accessToken } = useAuth();
   const isAppleMusic = musicSource === 'appleMusic';
   const { defaultTolerance, cadenceSource } = useSettings();
   const { setSession } = useWorkoutSession();
-  const { startTracking, stopTracking, connectionStatus, currentCadence, deviceName } = useLiveCadence();
+  const { startTracking, stopTracking, setTargetCadence, connectionStatus, currentCadence, deviceName } =
+    useLiveCadence();
   const isFocused = useIsFocused();
 
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>('checking');
@@ -137,6 +139,24 @@ export default function NowPlayingScreen({ route }: Props) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cadenceSource]);
+
+  // Keep the Apple Watch told what the target is so it can show
+  // live-vs-target on the wrist: re-sent whenever the active target
+  // changes (segment transitions included), cleared when this screen goes
+  // away. The target pace only exists for single-target "By pace" setups;
+  // interval segments are cadence-only, so the Watch gets just the unit.
+  const isSingleTarget = !segments || segments.length === 0;
+  useEffect(() => {
+    if (cadenceSource !== 'appleWatch') return;
+    setTargetCadence(activeTargetCadence ?? null, defaultTolerance, {
+      paceUnit,
+      targetPaceSeconds: isSingleTarget ? targetPaceSeconds : undefined,
+    }).catch((err) => console.error('[NowPlayingScreen] setTargetCadence failed:', err));
+    return () => {
+      setTargetCadence(null, defaultTolerance, { paceUnit }).catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cadenceSource, activeTargetCadence, defaultTolerance, paceUnit, targetPaceSeconds, isSingleTarget]);
 
   // Single ticking clock driving both the overall elapsed counter and (if
   // this is an interval workout) the current segment's countdown. Only runs

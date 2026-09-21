@@ -3,7 +3,7 @@ import { useSettings } from '../settings/SettingsContext';
 import * as GarminCadence from '../../modules/garmin-cadence';
 import type { ConnectionStatus, ConnectionStatusEvent, CadenceEvent } from '../../modules/garmin-cadence';
 import * as HealthKitCadence from '../../modules/healthkit-cadence';
-import type { StatusEvent as HealthKitStatusEvent } from '../../modules/healthkit-cadence';
+import type { StatusEvent as HealthKitStatusEvent, TargetPaceOptions } from '../../modules/healthkit-cadence';
 
 // The one thing any live-cadence consumer (voice nudges today,
 // potentially the matching engine later) should ever read from — see
@@ -37,6 +37,10 @@ type LiveCadenceState = {
   startTracking: () => Promise<void>;
   /** No-op when cadenceSource isn't 'healthkit' — see startTracking. */
   stopTracking: () => Promise<void>;
+  /** 'appleWatch' only: pushes the current target to the Watch so it can
+   * show live-vs-target on its own screen. Call with null when the
+   * workout ends. No-op for other sources. */
+  setTargetCadence: (target: number | null, tolerance: number, options?: TargetPaceOptions) => Promise<void>;
 };
 
 const LiveCadenceContext = createContext<LiveCadenceState | undefined>(undefined);
@@ -120,6 +124,12 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
     }
   };
 
+  const setTargetCadence = async (target: number | null, tolerance: number, options?: TargetPaceOptions) => {
+    if (cadenceSource === 'appleWatch') {
+      await HealthKitCadence.setTargetCadence(target, tolerance, options);
+    }
+  };
+
   return (
     <LiveCadenceContext.Provider
       value={{
@@ -130,6 +140,7 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
         requestHealthAccess,
         startTracking,
         stopTracking,
+        setTargetCadence,
       }}
     >
       {children}

@@ -32,6 +32,28 @@ export async function stop(): Promise<void> {
   return nativeModule.stop();
 }
 
+/**
+ * Tells a mirrored Apple Watch session the current target (so the Watch can
+ * show live-vs-target itself). Cheap; no-op when no Watch session is active.
+ * Pass `null` when the workout ends.
+ */
+export type PaceUnit = 'mi' | 'km';
+
+export type TargetPaceOptions = {
+  /** Distance unit the runner chose for pace display. Defaults to miles on the Watch. */
+  paceUnit?: PaceUnit;
+  /** Their typed target pace, in seconds per paceUnit — only for "By pace" setups. */
+  targetPaceSeconds?: number;
+};
+
+export async function setTargetCadence(
+  target: number | null,
+  tolerance: number,
+  options: TargetPaceOptions = {},
+): Promise<void> {
+  return nativeModule.setTargetCadence(target, tolerance, options.paceUnit ?? null, options.targetPaceSeconds ?? null);
+}
+
 export function addStatusListener(listener: (event: StatusEvent) => void): Subscription {
   return emitter.addListener('onStatusChanged', listener);
 }

@@ -15,7 +15,7 @@ const TIER_LABEL: Record<MatchedTrack['matchTier'], string> = {
 };
 
 export default function ResultsScreen({ route, navigation }: Props) {
-  const { playlistId, playlistName, musicSource, cadence, tolerance, unit } = route.params;
+  const { playlistId, playlistName, musicSource, cadence, tolerance, unit, paceUnit, targetPaceSeconds } = route.params;
   const { accessToken } = useAuth();
   const [matches, setMatches] = useState<MatchedTrack[]>([]);
   const [usedTolerance, setUsedTolerance] = useState(tolerance);
@@ -115,6 +115,8 @@ export default function ResultsScreen({ route, navigation }: Props) {
                     queue: matches,
                     unit,
                     targetCadence: cadence,
+                    paceUnit,
+                    targetPaceSeconds,
                   })
                 }
               >

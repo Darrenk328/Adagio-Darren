@@ -24,6 +24,48 @@ final class WorkoutMirroringManager: NSObject, ObservableObject {
     /// Steps/min derived the same way the phone does it (rolling 10 s
     /// window, EMA-smoothed) — a local sanity check against the phone's number.
     @Published private(set) var cadence: Int?
+    /// Target and tolerance pushed from the phone over the mirrored session
+    /// (the phone owns the workout setup; the Watch just displays). nil
+    /// target until the phone has sent one.
+    @Published private(set) var targetCadence: Int?
+    @Published private(set) var tolerance: Int = 5
+
+    /// The runner's chosen distance unit, pushed from the phone with the
+    /// target ("mi" or "km"). Miles until told otherwise.
+    @Published private(set) var paceUnit: String = "mi"
+    /// Their typed target pace in seconds per paceUnit — only when the
+    /// workout was set up "By pace" rather than by cadence.
+    @Published private(set) var targetPaceSeconds: Int?
+    /// Most recent running speed from the builder, m/s. Pace in the chosen
+    /// unit is derived from this so a unit change re-renders instantly.
+    @Published private(set) var speedMetersPerSecond: Double?
+
+    private var metersPerUnit: Double { paceUnit == "km" ? 1000 : 1609.344 }
+
+    /// Current pace in seconds per chosen unit; nil when not moving.
+    var paceSeconds: Int? {
+        guard let v = speedMetersPerSecond, v > 0.2 else { return nil }
+        return Int((metersPerUnit / v).rounded())
+    }
+
+    /// Live pace minus target pace, seconds — positive = slower than target.
+    var paceDeltaSeconds: Int? {
+        guard let pace = paceSeconds, let target = targetPaceSeconds else { return nil }
+        return pace - target
+    }
+
+    static func formatPace(_ seconds: Int) -> String {
+        String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    /// Live minus target — the same number the phone's Now Playing card shows.
+    var cadenceDelta: Int? {
+        guard let cadence, let targetCadence else { return nil }
+        return cadence - targetCadence
+    }
+    var isOnPace: Bool? {
+        cadenceDelta.map { abs($0) <= tolerance }
+    }
 
     private let healthStore = HKHealthStore()
     private var session: HKWorkoutSession?
@@ -35,15 +77,17 @@ final class WorkoutMirroringManager: NSObject, ObservableObject {
     private let emaAlpha: Double = 0.3
 
     private let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+    private let speedType = HKQuantityType.quantityType(forIdentifier: .runningSpeed)!
 
     // stepCount is in typesToShare too, not just typesToRead: the live
     // builder *saves* the step samples it collects, so writing them needs
     // share authorization or enableCollection below quietly yields nothing.
+    // runningSpeed likewise, for the on-watch min/mile pace readout.
     private var typesToShare: Set<HKSampleType> {
-        [HKObjectType.workoutType(), stepType]
+        [HKObjectType.workoutType(), stepType, speedType]
     }
     private var typesToRead: Set<HKObjectType> {
-        [HKObjectType.workoutType(), stepType]
+        [HKObjectType.workoutType(), stepType, speedType]
     }
 
     func requestAuthorization() async {
@@ -76,6 +120,7 @@ final class WorkoutMirroringManager: NSObject, ObservableObject {
             // real on-device failure ("Not tracking", no numbers), not a
             // permissions problem.
             dataSource.enableCollection(for: stepType, predicate: nil)
+            dataSource.enableCollection(for: speedType, predicate: nil)
             builder.dataSource = dataSource
             session.delegate = self
             builder.delegate = self
@@ -203,14 +248,45 @@ extension WorkoutMirroringManager: HKWorkoutSessionDelegate {
             self.teardown()
         }
     }
+
+    /// Phone -> Watch over the same mirrored session the cadence rides the
+    /// other way on. Payload: {"target": Int|null, "tolerance": Int}, sent
+    /// by HealthKitCadenceModule.setTargetCadence whenever the workout's
+    /// target changes (segment transitions included) and cleared on exit.
+    nonisolated func workoutSession(_ workoutSession: HKWorkoutSession, didReceiveDataFromRemoteWorkoutSession data: [Data]) {
+        for item in data {
+            guard let payload = try? JSONSerialization.jsonObject(with: item) as? [String: Any] else { continue }
+            let target = payload["target"] as? Int
+            let tolerance = payload["tolerance"] as? Int
+            let paceUnit = payload["paceUnit"] as? String
+            let targetPace = payload["targetPaceSeconds"] as? Int
+            Task { @MainActor in
+                self.targetCadence = target
+                if let tolerance { self.tolerance = tolerance }
+                if let paceUnit { self.paceUnit = paceUnit }
+                self.targetPaceSeconds = targetPace
+            }
+        }
+    }
 }
 
 extension WorkoutMirroringManager: HKLiveWorkoutBuilderDelegate {
     nonisolated func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder, didCollectDataOf collectedTypes: Set<HKSampleType>) {
         let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
-        guard collectedTypes.contains(stepType) else { return }
-        let statistics = workoutBuilder.statistics(for: stepType)
-        Task { @MainActor in self.ingestStepStatistics(statistics) }
+        let speedType = HKQuantityType.quantityType(forIdentifier: .runningSpeed)!
+
+        if collectedTypes.contains(stepType) {
+            let statistics = workoutBuilder.statistics(for: stepType)
+            Task { @MainActor in self.ingestStepStatistics(statistics) }
+        }
+        if collectedTypes.contains(speedType) {
+            // Most recent speed sample, m/s. Converted to min per mi/km at
+            // display time so the unit the phone sends applies immediately.
+            let mps = workoutBuilder.statistics(for: speedType)?
+                .mostRecentQuantity()?
+                .doubleValue(for: HKUnit.meter().unitDivided(by: .second()))
+            Task { @MainActor in self.speedMetersPerSecond = mps }
+        }
     }
 
     nonisolated func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}

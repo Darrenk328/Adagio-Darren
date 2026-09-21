@@ -81,6 +81,11 @@ export default function WorkoutSetupScreen({ route, navigation }: Props) {
       cadence: cadenceNum,
       tolerance: toleranceNum || defaultTolerance,
       unit,
+      // Running only: the unit they picked, and — if they set up "By pace"
+      // — the pace they typed. Both end up on the Apple Watch's readout.
+      paceUnit: activity === 'running' ? paceUnit : undefined,
+      targetPaceSeconds:
+        activity === 'running' && inputMode === 'pace' && paceSeconds !== null ? paceSeconds : undefined,
     });
   };
 
@@ -114,6 +119,9 @@ export default function WorkoutSetupScreen({ route, navigation }: Props) {
         queue: result.matches,
         segments,
         unit,
+        // Segments carry a cadence target only (no per-segment pace), so
+        // just the unit travels here — enough for the Watch's pace readout.
+        paceUnit: activity === 'running' ? paceUnit : undefined,
       });
     } catch (err) {
       Alert.alert('Something went wrong', 'Could not load matching songs for this workout.');

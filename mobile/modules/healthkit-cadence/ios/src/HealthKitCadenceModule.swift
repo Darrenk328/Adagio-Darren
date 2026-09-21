@@ -45,6 +45,16 @@ public class HealthKitCadenceModule: Module {
     // the Any? erasure the HealthKit types above need.
     private var isMirroredFromWatch = false
 
+    // Latest target/tolerance from JS, kept so a mirrored session that's
+    // adopted *after* the workout started still gets told the target
+    // straight away (see adopt). nil target = no workout in progress.
+    private var pendingTarget: Int?
+    private var pendingTolerance: Int = 5
+    // Runner's chosen pace unit ("mi"/"km") and, for "By pace" setups, the
+    // pace they typed in seconds per that unit. Display-only on the Watch.
+    private var pendingPaceUnit: String?
+    private var pendingTargetPaceSeconds: Int?
+
     // Rolling (timestamp, cumulative steps) samples — cadence is the
     // slope of this series, so at least two points spanning enough time
     // are needed before publishing anything. None of these types need
@@ -153,6 +163,18 @@ public class HealthKitCadenceModule: Module {
             }
         }
 
+        // Tells a mirrored Watch session the current target so the Watch
+        // can show live-vs-target itself. Cheap to call on every change;
+        // no-op (beyond remembering the value) when no mirrored session is
+        // active. Pass a null target when the workout ends.
+        AsyncFunction("setTargetCadence") { (target: Int?, tolerance: Int, paceUnit: String?, targetPaceSeconds: Int?) -> Void in
+            self.pendingTarget = target
+            self.pendingTolerance = tolerance
+            self.pendingPaceUnit = paceUnit
+            self.pendingTargetPaceSeconds = targetPaceSeconds
+            await self.pushTargetToWatch()
+        }
+
         // Only meaningful for the 'healthkit' (iPhone-owned) path — JS
         // never calls this for 'appleWatch' sessions, since the Watch (not
         // the phone) controls when a mirrored workout starts and stops.
@@ -209,6 +231,29 @@ public class HealthKitCadenceModule: Module {
         // No beginCollection call — the Watch already owns collection
         // for a mirrored session; this side only receives what it sends.
         sendEvent("onStatusChanged", ["status": "tracking"])
+
+        // If a workout's already in progress on the phone, the Watch should
+        // know the target immediately rather than waiting for the next change.
+        Task { await pushTargetToWatch() }
+    }
+
+    // Phone -> Watch over the mirrored session (the reverse direction of
+    // the cadence stream). Payload {"target": Int|null, "tolerance": Int};
+    // the Watch's WorkoutMirroringManager decodes it.
+    private func pushTargetToWatch() async {
+        guard #available(iOS 26.0, *) else { return }
+        guard isMirroredFromWatch, let session = session as? HKWorkoutSession else { return }
+        // NSNull, not a bare nil: JSONSerialization rejects Optional.none.
+        let payload: [String: Any] = [
+            "target": pendingTarget.map { $0 as Any } ?? NSNull(),
+            "tolerance": pendingTolerance,
+            "paceUnit": pendingPaceUnit.map { $0 as Any } ?? NSNull(),
+            "targetPaceSeconds": pendingTargetPaceSeconds.map { $0 as Any } ?? NSNull(),
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        // Best-effort: the Watch display is a nicety; a failed send must never
+        // affect the phone-side workout.
+        try? await session.sendToRemoteWorkoutSession(data: data)
     }
 
     // Shared between start()'s iPhone-owned session and adopt()'s
