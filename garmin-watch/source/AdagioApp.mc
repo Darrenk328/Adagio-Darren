@@ -6,14 +6,20 @@ import Toybox.ActivityRecording;
 import Toybox.System;
 
 // Adagio's Connect IQ Watch App entry point. Owns the
-// ActivityRecording.Session lifecycle (start on app launch, discard on
+// ActivityRecording.Session lifecycle (start on app launch, save on
 // exit) — AdagioCadenceView just reads live info via
 // Activity.getActivityInfo(), which is only populated with real sensor
 // data while a recording session is active.
 //
-// Recorded data is discarded (not saved) on exit — this app exists to
-// feed live cadence into the Adagio phone app during a workout, not to
-// duplicate Garmin's own activity-recording/history features.
+// The session is now SAVED (not discarded) on exit, with a real
+// GPS-tracking sport type — so a run recorded with this app gets real
+// distance/pace/mileage in Garmin Connect, same as Garmin's own native
+// Run activity would. Deliberately NOT building a direct Strava API
+// integration for this: Garmin Connect already has an official Strava
+// auto-sync (user-side one-time link, Garmin Connect app > Settings >
+// Connected Apps > Strava) — any activity saved here rides that for
+// free. The :name field is the actual attribution lever we control; it
+// becomes the activity's title on both Garmin Connect and Strava.
 class AdagioApp extends Application.AppBase {
 
     private var mSession as ActivityRecording.Session?;
@@ -23,18 +29,19 @@ class AdagioApp extends Application.AppBase {
     }
 
     function onStart(state as Dictionary?) as Void {
-        // SUB_SPORT_INDOOR_RUNNING, not SUB_SPORT_STREET — this app only
-        // ever reads accelerometer-derived cadence (Activity.Info.currentCadence),
-        // never position, so there's no reason to ask the OS to acquire
-        // GPS at all. SUB_SPORT_STREET (an outdoor/GPS subtype) triggers
-        // the watch's standard GPS-search status icon indefinitely
-        // indoors, for zero benefit to an app that never reads position
-        // (confirmed on a real Forerunner 55, in the original prototype).
+        // SUB_SPORT_GENERIC, not SUB_SPORT_INDOOR_RUNNING — this used to
+        // be indoor-only because the app only read accelerometer-derived
+        // cadence and never position, so GPS was pointless overhead (and
+        // indoor mode suppresses the GPS search entirely). Now that a
+        // real run needs distance/pace/mileage, GPS has to actually be
+        // requested — SUB_SPORT_GENERIC is a plain outdoor default,
+        // distinct from SUB_SPORT_INDOOR_RUNNING which would still
+        // suppress it.
         var started = false;
         mSession = ActivityRecording.createSession({
-            :name => "Adagio",
+            :name => "Run with Adagio",
             :sport => Activity.SPORT_RUNNING,
-            :subSport => Activity.SUB_SPORT_INDOOR_RUNNING,
+            :subSport => Activity.SUB_SPORT_GENERIC,
         });
         started = mSession.start();
         if (!started) {
@@ -51,7 +58,7 @@ class AdagioApp extends Application.AppBase {
             mSession.stop();
         }
         if (mSession != null) {
-            mSession.discard();
+            mSession.save();
         }
     }
 
