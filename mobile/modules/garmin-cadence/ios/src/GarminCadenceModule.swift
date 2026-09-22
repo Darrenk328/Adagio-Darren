@@ -25,6 +25,12 @@ public class GarminCadenceModule: Module {
     private var device: IQDevice?
     private var watchApp: IQApp?
 
+    // The last device the user picked in Garmin Connect Mobile, archived
+    // so Adagio reconnects by itself on the next launch. Without this the
+    // runner had to tap "Find Device" (a whole round-trip through GCM)
+    // every single time the app restarted.
+    private static let savedDeviceKey = "adagio.garmin.savedDevice"
+
     public required init(appContext: AppContext) {
         super.init(appContext: appContext)
         GarminCadenceModule.shared = self
@@ -41,6 +47,8 @@ public class GarminCadenceModule: Module {
         delegateHandler.onCharacteristicsDiscovered = { [weak self] device in
             self?.handleCharacteristicsDiscovered(device)
         }
+
+        restoreSavedDevice()
 
         delegateHandler.onMessageReceived = { [weak self] message, _ in
             if let number = message as? NSNumber {
@@ -72,6 +80,89 @@ public class GarminCadenceModule: Module {
             self.sendEvent("onConnectionStatusChanged", ["status": "opening"])
             ConnectIQ.sharedInstance().showDeviceSelection()
         }
+
+        // Whether a watch is remembered, and whether the Adagio Connect IQ
+        // app is on it. Drives the Settings status line and the workout
+        // screen's error copy. getAppStatus needs a live connection, so
+        // `installed` is nil (unknown) when the watch isn't connected —
+        // deliberately not reported as "not installed".
+        AsyncFunction("getWatchAppStatus") { () -> [String: Any] in
+            guard let device = self.device else {
+                return ["hasDevice": false, "installed": NSNull()]
+            }
+            var result: [String: Any] = [
+                "hasDevice": true,
+                "deviceName": device.friendlyName ?? "Garmin Watch",
+                "connected": ConnectIQ.sharedInstance().getDeviceStatus(device) == .connected,
+            ]
+            guard let watchApp = self.watchApp,
+                  ConnectIQ.sharedInstance().getDeviceStatus(device) == .connected
+            else {
+                result["installed"] = NSNull()
+                return result
+            }
+            let installed: Bool = await withCheckedContinuation { continuation in
+                ConnectIQ.sharedInstance().getAppStatus(watchApp) { status in
+                    continuation.resume(returning: status?.isInstalled ?? false)
+                }
+            }
+            result["installed"] = installed
+            return result
+        }
+
+        // Asks the watch to open the Adagio Connect IQ app. Unlike Apple's
+        // startWatchApp, Garmin will NOT launch an app silently: this
+        // surfaces a confirmation prompt on the watch that the runner taps
+        // once. That's the whole interaction though — AdagioApp.onStart
+        // (garmin-watch/source/AdagioApp.mc) begins the recording session
+        // as soon as it opens, so there's no "start run" step after it.
+        // Returns a reason string rather than throwing for the expected
+        // outcomes, so JS can phrase the right message.
+        AsyncFunction("openWatchApp") { () -> String in
+            guard let device = self.device, let watchApp = self.watchApp else { return "noDevice" }
+            guard ConnectIQ.sharedInstance().getDeviceStatus(device) == .connected else { return "notConnected" }
+
+            return await withCheckedContinuation { (continuation: CheckedContinuation<String, Never>) in
+                ConnectIQ.sharedInstance().openAppRequest(watchApp) { result in
+                    switch result {
+                    case .success:
+                        continuation.resume(returning: "promptShown")
+                    case .failure_AppAlreadyRunning:
+                        continuation.resume(returning: "alreadyRunning")
+                    case .failure_AppNotFound:
+                        continuation.resume(returning: "notInstalled")
+                    case .failure_PromptNotDisplayed:
+                        continuation.resume(returning: "promptNotShown")
+                    case .failure_DeviceNotAvailable:
+                        continuation.resume(returning: "notConnected")
+                    default:
+                        continuation.resume(returning: "failed")
+                    }
+                }
+            }
+        }
+    }
+
+    /// Re-registers the device the user picked on a previous launch, so
+    /// cadence can start flowing without another trip through GCM.
+    private func restoreSavedDevice() {
+        guard let data = UserDefaults.standard.data(forKey: Self.savedDeviceKey),
+              let saved = try? NSKeyedUnarchiver.unarchivedObject(ofClass: IQDevice.self, from: data)
+        else { return }
+        adopt(saved, announceAs: "found")
+    }
+
+    private func saveDevice(_ device: IQDevice) {
+        guard let data = try? NSKeyedArchiver.archivedData(withRootObject: device, requiringSecureCoding: true) else { return }
+        UserDefaults.standard.set(data, forKey: Self.savedDeviceKey)
+    }
+
+    /// Shared by handleOpenURL (fresh pick) and restoreSavedDevice.
+    private func adopt(_ chosen: IQDevice, announceAs status: String) {
+        device = chosen
+        watchApp = IQApp(uuid: UUID(uuidString: watchAppUUIDString)!, store: UUID(), device: chosen)
+        ConnectIQ.sharedInstance().register(forDeviceEvents: chosen, delegate: delegateHandler)
+        sendEvent("onConnectionStatusChanged", ["status": status, "deviceName": chosen.friendlyName ?? "Garmin Watch"])
     }
 
     /// Called by GarminCadenceAppDelegateSubscriber's open(url:options:) —
@@ -85,11 +176,8 @@ public class GarminCadenceModule: Module {
             return false
         }
 
-        device = chosen
-        watchApp = IQApp(uuid: UUID(uuidString: watchAppUUIDString)!, store: UUID(), device: chosen)
-        ConnectIQ.sharedInstance().register(forDeviceEvents: chosen, delegate: delegateHandler)
-
-        sendEvent("onConnectionStatusChanged", ["status": "found", "deviceName": chosen.friendlyName ?? "Garmin Watch"])
+        saveDevice(chosen)
+        adopt(chosen, announceAs: "found")
         return true
     }
 

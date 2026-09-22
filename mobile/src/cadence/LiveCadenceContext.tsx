@@ -1,7 +1,12 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useSettings } from '../settings/SettingsContext';
 import * as GarminCadence from '../../modules/garmin-cadence';
-import type { ConnectionStatus, ConnectionStatusEvent, CadenceEvent } from '../../modules/garmin-cadence';
+import type {
+  ConnectionStatus,
+  ConnectionStatusEvent,
+  CadenceEvent,
+  GarminWatchAppStatus,
+} from '../../modules/garmin-cadence';
 import * as HealthKitCadence from '../../modules/healthkit-cadence';
 import type { StatusEvent as HealthKitStatusEvent, TargetPaceOptions, WatchStatus } from '../../modules/healthkit-cadence';
 
@@ -47,6 +52,13 @@ type LiveCadenceState = {
    * show live-vs-target on its own screen. Call with null when the
    * workout ends. No-op for other sources. */
   setTargetCadence: (target: number | null, tolerance: number, options?: TargetPaceOptions) => Promise<void>;
+  /** 'garmin' only: whether a watch is remembered and has the Adagio
+   * Connect IQ app; null until checked or for other sources. */
+  garminStatus: GarminWatchAppStatus | null;
+  /** 'garmin' only: asks the watch to open the Adagio app (which starts
+   * its recording session). Resolves to a human-readable problem
+   * description, or null when the watch accepted it. */
+  openGarminApp: () => Promise<string | null>;
   /** 'appleWatch' only: paired / app-installed flags, refreshed by
    * reconnectWatch(); null until first checked or for other sources. */
   watchStatus: WatchStatus | null;
@@ -73,6 +85,7 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
   const [currentSteps, setCurrentSteps] = useState<number | null>(null);
   const [currentSpeedMps, setCurrentSpeedMps] = useState<number | null>(null);
   const [watchStatus, setWatchStatus] = useState<WatchStatus | null>(null);
+  const [garminStatus, setGarminStatus] = useState<GarminWatchAppStatus | null>(null);
 
   useEffect(() => {
     if (cadenceSource === 'garmin') {
@@ -131,6 +144,17 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
     setCurrentSpeedMps(null);
   }, [cadenceSource]);
 
+  // Same idea for Garmin: is a watch remembered, and is Adagio on it?
+  // Re-checked whenever the connection status changes, since getAppStatus
+  // only works while the watch is actually connected.
+  useEffect(() => {
+    if (cadenceSource !== 'garmin') {
+      setGarminStatus(null);
+      return;
+    }
+    GarminCadence.getWatchAppStatus().then(setGarminStatus).catch(() => {});
+  }, [cadenceSource, connectionStatus]);
+
   // Know up front whether there's a Watch with Adagio on it, so Settings
   // and the workout screen can say something more useful than "Not connected".
   useEffect(() => {
@@ -173,6 +197,26 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
     }
   };
 
+  const openGarminApp = async (): Promise<string | null> => {
+    if (cadenceSource !== 'garmin') return null;
+    const result = await GarminCadence.openWatchApp();
+    switch (result) {
+      case 'promptShown':
+      case 'alreadyRunning':
+        return null;
+      case 'noDevice':
+        return 'No Garmin watch is set up yet. Go to Settings and tap Find Device.';
+      case 'notConnected':
+        return 'Your Garmin watch isn’t connected. Make sure it’s nearby with Bluetooth on, or go to Settings and reconnect it.';
+      case 'notInstalled':
+        return 'The Adagio app isn’t installed on your Garmin watch.';
+      case 'promptNotShown':
+        return 'Your watch didn’t show the prompt. Open Adagio on the watch to start.';
+      default:
+        return 'Couldn’t reach your Garmin watch. Go to Settings and reconnect it.';
+    }
+  };
+
   const startWatchWorkout = async () => {
     if (cadenceSource === 'appleWatch') {
       await HealthKitCadence.startWatchWorkout();
@@ -203,6 +247,8 @@ export function LiveCadenceProvider({ children }: { children: React.ReactNode })
         startTracking,
         stopTracking,
         setTargetCadence,
+        garminStatus,
+        openGarminApp,
         watchStatus,
         startWatchWorkout,
         reconnectWatch,

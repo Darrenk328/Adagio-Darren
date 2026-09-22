@@ -33,8 +33,16 @@ export default function SettingsScreen() {
   const { musicSource, logout } = useAuth();
   const serviceName = musicSource === 'appleMusic' ? 'Apple Music' : 'Spotify';
   const { defaultTolerance, setDefaultTolerance, cadenceSource, setCadenceSource } = useSettings();
-  const { connectionStatus, deviceName, currentCadence, findDevice, requestHealthAccess, watchStatus, reconnectWatch } =
-    useLiveCadence();
+  const {
+    connectionStatus,
+    deviceName,
+    currentCadence,
+    findDevice,
+    requestHealthAccess,
+    watchStatus,
+    reconnectWatch,
+    garminStatus,
+  } = useLiveCadence();
   const [isReconnecting, setIsReconnecting] = useState(false);
 
   const handleReconnectWatch = async () => {
@@ -183,9 +191,25 @@ export default function SettingsScreen() {
         {cadenceSource === 'garmin' && (
           <View style={styles.garminStatus}>
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>{deviceName ?? 'Status'}</Text>
-              <Text style={styles.rowValue}>{STATUS_LABEL[connectionStatus] ?? connectionStatus}</Text>
+              <Text style={styles.rowLabel}>{deviceName ?? garminStatus?.deviceName ?? 'Status'}</Text>
+              <View style={styles.statusWithAction}>
+                <Text style={[styles.rowValue, connectionStatus !== 'ready' && styles.rowValueWarn]}>
+                  {STATUS_LABEL[connectionStatus] ?? connectionStatus}
+                </Text>
+                <Pressable
+                  style={({ pressed }) => [styles.reconnectButton, pressed && { opacity: 0.6 }]}
+                  onPress={findDevice}
+                  accessibilityLabel="Reconnect Garmin watch"
+                >
+                  <Ionicons name="refresh" size={18} color={colors.text} />
+                </Pressable>
+              </View>
             </View>
+            {garminStatus?.installed === false && (
+              <Text style={styles.hint}>
+                The Adagio app isn’t on this watch. Install it from the Connect IQ store, then reconnect.
+              </Text>
+            )}
             {currentCadence != null && (
               <View style={styles.row}>
                 <Text style={styles.rowLabel}>Live cadence</Text>
@@ -193,8 +217,14 @@ export default function SettingsScreen() {
               </View>
             )}
             <Pressable style={styles.logoutButton} onPress={findDevice}>
-              <Text style={styles.logoutButtonText}>Find Device</Text>
+              <Text style={styles.logoutButtonText}>
+                {garminStatus?.hasDevice ? 'Choose a different watch' : 'Find Device'}
+              </Text>
             </Pressable>
+            <Text style={styles.hint}>
+              Your watch is remembered between launches. Starting a workout asks it to open Adagio — tap “Yes” on
+              the watch and it begins recording.
+            </Text>
           </View>
         )}
 

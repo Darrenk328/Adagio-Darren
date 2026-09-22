@@ -43,6 +43,7 @@ export default function NowPlayingScreen({ route, navigation }: Props) {
     endWorkout: endCadenceWorkout,
     startWatchWorkout,
     watchStatus,
+    openGarminApp,
     connectionStatus,
     currentCadence,
     currentSteps,
@@ -197,7 +198,7 @@ export default function NowPlayingScreen({ route, navigation }: Props) {
   const watchAttemptsRef = useRef(0);
   const isWatchConnected = connectionStatus === 'ready';
   useEffect(() => {
-    if (cadenceSource !== 'appleWatch') return;
+    if (cadenceSource !== 'appleWatch' && cadenceSource !== 'garmin') return;
     if (isWatchConnected) {
       setWatchError(null);
       watchAttemptsRef.current = 0;
@@ -207,16 +208,33 @@ export default function NowPlayingScreen({ route, navigation }: Props) {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
+    // Apple: the phone launches the Watch app outright, so retrying is
+    // free and silent. Garmin: each attempt puts a confirmation prompt on
+    // the watch face, so retry far more slowly — spamming prompts at a
+    // runner would be worse than useless.
+    const isGarmin = cadenceSource === 'garmin';
     const attempt = async () => {
       if (cancelled) return;
       watchAttemptsRef.current += 1;
+      let problem: string | null = null;
       try {
-        await startWatchWorkout();
+        if (isGarmin) problem = await openGarminApp();
+        else await startWatchWorkout();
       } catch (err) {
-        console.warn('[NowPlayingScreen] startWatchWorkout failed:', err);
+        console.warn('[NowPlayingScreen] watch auto-start failed:', err);
       }
       if (cancelled) return;
-      if (watchAttemptsRef.current >= WATCH_ATTEMPTS_BEFORE_ERROR) {
+
+      if (isGarmin) {
+        // Garmin tells us exactly what went wrong on the first try, so
+        // show it immediately rather than after N silent rounds.
+        setWatchError(
+          problem ??
+            (watchAttemptsRef.current === 1
+              ? 'Tap “Yes” on your Garmin watch to start tracking.'
+              : 'Waiting for your Garmin watch — tap “Yes” on the prompt, or open Adagio on the watch.'),
+        );
+      } else if (watchAttemptsRef.current >= WATCH_ATTEMPTS_BEFORE_ERROR) {
         setWatchError(
           watchStatus && !watchStatus.paired
             ? 'No Apple Watch is paired with this iPhone.'
@@ -225,9 +243,14 @@ export default function NowPlayingScreen({ route, navigation }: Props) {
               : 'Couldn’t connect to your Apple Watch. Go to Settings and reconnect Apple Watch, or open Adagio on the Watch and tap Start.',
         );
       }
+
       // Slow down once we've told them, but never stop trying — it'll
-      // connect the moment the Watch comes back in range.
-      const delay = watchAttemptsRef.current >= WATCH_ATTEMPTS_BEFORE_ERROR ? 15_000 : 6_000;
+      // connect the moment the watch comes back in range.
+      const delay = isGarmin
+        ? GARMIN_RETRY_MS
+        : watchAttemptsRef.current >= WATCH_ATTEMPTS_BEFORE_ERROR
+          ? 15_000
+          : 6_000;
       timer = setTimeout(attempt, delay);
     };
     void attempt();
@@ -608,6 +631,8 @@ const CADENCE_STATUS_LABEL: Record<string, string> = {
  */
 /** Auto-start rounds (~6 s apart) before the card tells the runner what to do. */
 const WATCH_ATTEMPTS_BEFORE_ERROR = 3;
+/** Garmin re-ask interval. Long on purpose: every attempt shows a prompt on the watch. */
+const GARMIN_RETRY_MS = 30_000;
 
 const METERS_PER_UNIT: Record<PaceUnit, number> = { mi: 1609.344, km: 1000 };
 
